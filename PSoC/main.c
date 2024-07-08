@@ -366,7 +366,7 @@ int main(void)
     
     uint8 btRequest = 0u; // Controlls what data is sent
     uint16 initTime = timerStart(); // For timer
-    uint16 const BT_TIMEOUT = 2000u; // How many ms will we wait for bt update before shutting off output?
+    uint16 const BT_TIMEOUT = 500u; // How many ms will we wait for bt update before shutting off output?
     
     uint8 const UART_BYTE_DELAY = 80u; // UART send delay in us, baud is 115200, 60us is about one byte.
                                        // Setting to 60 causes data loss at i2c transfer

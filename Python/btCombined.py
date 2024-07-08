@@ -1,10 +1,9 @@
 import serial
-import time
 from collections import namedtuple
 
 
 # Controls - what is being requested?
-LIDAR_ON = 1
+LIDAR_ON = 0
 IMU_ON = 1
 
 # How many bytes are the packets? (including header and checksum)
@@ -56,7 +55,7 @@ def twos(val: int, length: int) -> int:
 # Open port
 # timeout waits for return of requested no. bytes specified in read() function, and also in port opening
 port = serial.Serial(
-    port="COM5", baudrate=115200, bytesize=8, timeout=5, stopbits=serial.STOPBITS_ONE
+    port="/dev/cu.HC-06", baudrate=115200, bytesize=8, timeout=5, stopbits=serial.STOPBITS_ONE
 )
 port.write(bytes([REQ])) # Make request for data
 
