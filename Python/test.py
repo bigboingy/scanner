@@ -1,2 +1,3 @@
-a = [1]
-print(a[-1])
+import numpy as np
+a = np.empty(0)
+print(a)

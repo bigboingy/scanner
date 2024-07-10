@@ -12,7 +12,7 @@ def twos(val: int, length: int) -> int:
 
 # Function to read and process serial data
 # port: port handle, oldBytes: bytes that haven't been processed yet (bytearray)
-# Returns unprocessed data, lidar tuples, and imu tuples
+# Returns false if no new bytes, otherwise returns unprocessed data, lidar tuples (may be none), and imu tuples (may be none)
 def read(port, oldBytes:bytearray):
 
     # Structure to return

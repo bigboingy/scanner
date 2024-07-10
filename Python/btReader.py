@@ -19,8 +19,6 @@ unprocessedBytes = bytearray() # Store bytes in incomplete packet
 
 port.write(bytes([cnst.REQ])) # Make request for data
 while 1:
-   
-
     data = read(port,unprocessedBytes)
     if data:
         unprocessedBytes = data['bytes'] # Override bytes storage
