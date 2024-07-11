@@ -57,9 +57,6 @@ def graphUpdate(btData):
             # Rescale graph
             ax.relim()
             ax.autoscale()
-        
-        # Clear data waiting to be read, eliminating buildup
-        # portHandle.reset_input_buffer()
 
 unprocessedBytes = bytearray() # Store bytes in incomplete packet
 # Function to yield bt data call

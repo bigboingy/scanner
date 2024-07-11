@@ -37,8 +37,31 @@ GYRO_SCALE_FAC = gyroScaleFactors[GYRO_SCALE] #LSB/dps
 MAG_SCALE_FAC = 1/0.15 #LSB/microTesla
 TEMP_SCALE_FAC = 333.87 #LSB/degreeC
 
-# Data structures for lidar and imu
+# Data structures for lidar and imu. Timestamp added by python (not sent over bt)
 from collections import namedtuple
-Lidar = namedtuple('Lidar', 'dist str temp')
+Lidar = namedtuple('Lidar', 'dist str temp time')
 Cartesian = namedtuple('Cartesian', 'x y z')
-Imu = namedtuple('Imu', 'acc gyro mag temp')
+Imu = namedtuple('Imu', 'acc gyro mag temp time')
+
+# from dataclasses import dataclass
+# @dataclass
+# class Lidar:
+#     dist: int
+#     str: int
+#     temp: int
+#     timestamp: int
+
+# @dataclass
+# class Cartesian:
+#     x: int
+#     y: int
+#     z: int
+
+# @dataclass
+# class Imu:
+#     acc: Cartesian
+#     gyro: Cartesian
+#     mag: Cartesian
+#     temp: int
+#     timestamp: int
+

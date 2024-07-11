@@ -1,19 +1,19 @@
 # Imports constants
 import constants as cnst
-# Import serial
+import time
 
 # Function to convert single integer (base 10) into two's complement integer
 # In: val, length: how many bytes are being convreted
 # Out: two's complement of the integer
 def twos(val: int, length: int) -> int:
-    byte = val.to_bytes(length, signed=False) # Convert to byte object
-    return int.from_bytes(byte, signed = True) # Use inbuilt 2s complement conversion
+    byte = val.to_bytes(length, byteorder='big', signed=False) # Convert to byte object
+    return int.from_bytes(byte, byteorder='big', signed=True) # Use inbuilt 2s complement conversion
 
 
 # Function to read and process serial data
 # port: port handle, oldBytes: bytes that haven't been processed yet (bytearray)
-# Returns false if no new bytes, otherwise returns unprocessed data, lidar tuples (may be none), and imu tuples (may be none)
-def read(port, oldBytes:bytearray):
+# Returns false if no new bytes, otherwise returns dictionary with unprocessed data, lidar tuples (may be none), and imu tuples (may be none)
+def read(port, oldBytes:bytearray) -> dict:
 
     # Structure to return
     result = {
@@ -63,7 +63,7 @@ def read(port, oldBytes:bytearray):
                 checksum = sum(packet[:-1])&0xFF
                 if checksum != packet[-1]:
                     print('Checksum Failed!')
-                # Make a lidar tuple
+                # Make a lidar dataclass
                 newLidar = cnst.Lidar(
                 packet[2] + (packet[3]<<8), # Dist
                 packet[4] + (packet[5]<<8), # Str
@@ -92,7 +92,7 @@ def read(port, oldBytes:bytearray):
                 checksum = sum(packet[:-1])&0xFF
                 if checksum != packet[-1]:
                     print('Checksum Failed!')
-                # Make an imu tuple
+                # Make an imu dataclass
                 newImu = cnst.Imu(
                     # Acc x,y,z
                     cnst.Cartesian(twos((packet[2]<<8) + packet[3],2)/cnst.ACC_SCALE_FAC,
@@ -107,7 +107,10 @@ def read(port, oldBytes:bytearray):
                             twos(packet[18] + (packet[19]<<8),2)/cnst.MAG_SCALE_FAC,
                             twos(packet[20] + (packet[21]<<8),2)/cnst.MAG_SCALE_FAC),
                     # Temperature
-                    twos((packet[14]<<8) + packet[15],2)/cnst.TEMP_SCALE_FAC + 21
+                    twos((packet[14]<<8) + packet[15],2)/cnst.TEMP_SCALE_FAC + 21,
+
+                    # Timestamp
+                    time.time()
                 )
                 # Push to sensorData
                 result['imu'].append(newImu)
