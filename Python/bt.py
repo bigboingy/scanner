@@ -1,6 +1,8 @@
 # Imports constants
 import constants as cnst
+import serial
 import time
+import magCal
 
 # Function to convert single integer (base 10) into two's complement integer
 # In: val, length: how many bytes are being convreted
@@ -10,10 +12,16 @@ def twos(val: int, length: int) -> int:
     return int.from_bytes(byte, byteorder='big', signed=True) # Use inbuilt 2s complement conversion
 
 
+# Function to open port, returning port handle
+def getPortHandle(port = "/dev/cu.HC-06", baud = 115200, timeout = 5):
+    return serial.Serial(
+        port=port, baudrate=baud, bytesize=8, timeout=timeout, stopbits=serial.STOPBITS_ONE
+    )
+
 # Function to read and process serial data
 # port: port handle, oldBytes: bytes that haven't been processed yet (bytearray)
 # Returns false if no new bytes, otherwise returns dictionary with unprocessed data, lidar tuples (may be none), and imu tuples (may be none)
-def read(port, oldBytes:bytearray) -> dict:
+def read(port, oldBytes:bytearray, magCalOn=True) -> dict:
 
     # Structure to return
     result = {
@@ -92,22 +100,33 @@ def read(port, oldBytes:bytearray) -> dict:
                 checksum = sum(packet[:-1])&0xFF
                 if checksum != packet[-1]:
                     print('Checksum Failed!')
-                # Make an imu dataclass
+
+                # Check magnetometer status 2 register for magnetic sensor overflow
+                if packet[-2] & 0x08:
+                    print('Magnetic sensor overflow occurred')
+
+                # Magnetometer calibration. Sent as low then high bit. Invert Y and Z to align with acc/gyro
+                mag = [twos(packet[16] | (packet[17]<<8),2)/cnst.MAG_SCALE_FAC, # x
+                       twos(packet[18] | (packet[19]<<8),2)/cnst.MAG_SCALE_FAC * -1, # y
+                       twos(packet[20] | (packet[21]<<8),2)/cnst.MAG_SCALE_FAC * -1] # z
+                
+                if magCalOn:
+                    mag = magCal.applyCalibration(mag)
+
+                # Make an imu tuple
                 newImu = cnst.Imu(
                     # Acc x,y,z
-                    cnst.Cartesian(twos((packet[2]<<8) + packet[3],2)/cnst.ACC_SCALE_FAC,
-                            twos((packet[4]<<8) + packet[5],2)/cnst.ACC_SCALE_FAC,
-                            twos((packet[6]<<8) + packet[7],2)/cnst.ACC_SCALE_FAC),
+                    cnst.Cartesian(twos((packet[2]<<8) | packet[3],2)/cnst.ACC_SCALE_FAC,
+                            twos((packet[4]<<8) | packet[5],2)/cnst.ACC_SCALE_FAC,
+                            twos((packet[6]<<8) | packet[7],2)/cnst.ACC_SCALE_FAC),
                     # Gyro x,y,z
-                    cnst.Cartesian(twos((packet[8]<<8) + packet[9],2)/cnst.GYRO_SCALE_FAC,
-                            twos((packet[10]<<8) + packet[11],2)/cnst.GYRO_SCALE_FAC,
-                            twos((packet[12]<<8) + packet[13],2)/cnst.GYRO_SCALE_FAC),
-                    # Mag x,y,z (low then high bit)
-                    cnst.Cartesian(twos(packet[16] + (packet[17]<<8),2)/cnst.MAG_SCALE_FAC,
-                            twos(packet[18] + (packet[19]<<8),2)/cnst.MAG_SCALE_FAC,
-                            twos(packet[20] + (packet[21]<<8),2)/cnst.MAG_SCALE_FAC),
+                    cnst.Cartesian(twos((packet[8]<<8) | packet[9],2)/cnst.GYRO_SCALE_FAC,
+                            twos((packet[10]<<8) | packet[11],2)/cnst.GYRO_SCALE_FAC,
+                            twos((packet[12]<<8) | packet[13],2)/cnst.GYRO_SCALE_FAC),
+                    # Mag x,y,z
+                    cnst.Cartesian(mag[0],mag[1],mag[2]),
                     # Temperature
-                    twos((packet[14]<<8) + packet[15],2)/cnst.TEMP_SCALE_FAC + 21,
+                    twos((packet[14]<<8) | packet[15],2)/cnst.TEMP_SCALE_FAC + 21,
 
                     # Timestamp
                     time.time()

@@ -16,8 +16,8 @@ IMU_REQ   = 1<<1
 REQ = (LIDAR_ON*LIDAR_REQ) | (IMU_ON*IMU_REQ) # Set the request byte
 
 # Scales for accelerometer and gyroscope. Can be 0,1,2,3. Used for obtaining sensor values
-ACC_SCALE = 0
-GYRO_SCALE = 0
+ACC_SCALE = 1
+GYRO_SCALE = 2
 
 # Scale factors for imu
 accScaleFactors = {

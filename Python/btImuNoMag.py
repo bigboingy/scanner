@@ -5,7 +5,6 @@ import time
 import imufusion
 import numpy as np
 import open3d as o3d
-# import open3d as o3d
 
 # Open port
 # timeout waits for return of requested no. bytes specified in read() function, and also in port opening
@@ -51,16 +50,13 @@ vis.add_geometry(line_set)
 axis = o3d.geometry.TriangleMesh.create_coordinate_frame()
 vis.add_geometry(axis)
 
-
-
-
 # Imu fusion setup
 ahrs = imufusion.Ahrs()
 euler = np.empty((0, 3))
 
 # Store bytes from incomplete packets
 unprocessedBytes = bytearray()
-# Make request for data
+# Make initial request for data
 port.write(bytes([cnst.REQ]))
 
 # Loop
@@ -77,10 +73,7 @@ while running:
             # Magnetometer-free fusion
             # Takes gyro (1 by 3 matrix), acc (1 by 3 matrix)
             for reading in data['imu']:
-                ahrs.update_no_magnetometer(np.array(reading.gyro), np.array(reading.acc), 1 / 1000)  # 1000 Hz sample rate
-                #np.append(euler,ahrs.quaternion.to_euler())
-                #print(ahrs.quaternion.to_matrix())
-
+                ahrs.update_no_magnetometer(np.array(reading.gyro), np.array(reading.acc), 1 / 1100)  # 1.1kHz sample rate
                 
             # Update geometry
             line_set.points = o3d.utility.Vector3dVector(points) # Reset points
