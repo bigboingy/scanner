@@ -100,5 +100,15 @@
 #         break  
 import numpy as np
 
+a = np.array([[1],[2],[3],[4],[5]])
+b = a
+print(np.reshape(a[0:-1,0],(2,2)))
 
-print(hex(int('1000',2)))
+
+arg = 5
+def a(arg):
+    print(arg)
+
+a(3)
+print(b)
+print(b[1:,:])

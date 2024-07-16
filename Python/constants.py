@@ -4,7 +4,7 @@ IMU_ON = 1
 
 # How many bytes are the packets? (including header and checksum)
 LIDAR_LENGTH = 9
-IMU_LENGTH = 24
+IMU_LENGTH = 26
 
 # What are the header values?
 LIDAR_HEADER = 0x59
@@ -39,7 +39,7 @@ TEMP_SCALE_FAC = 333.87 #LSB/degreeC
 
 # Data structures for lidar and imu. Timestamp added by python (not sent over bt)
 from collections import namedtuple
-Lidar = namedtuple('Lidar', 'dist str temp time')
+Lidar = namedtuple('Lidar', 'dist str temp')
 Cartesian = namedtuple('Cartesian', 'x y z')
 Imu = namedtuple('Imu', 'acc gyro mag temp time')
 

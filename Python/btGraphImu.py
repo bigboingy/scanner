@@ -58,6 +58,9 @@ def graphUpdate(btData):
             ax.relim()
             ax.autoscale()
 
+        for read in btData['imu']:
+            print(read.time)
+
 unprocessedBytes = bytearray() # Store bytes in incomplete packet
 # Function to yield bt data call
 def dataGen(port,unprocessedBytes):

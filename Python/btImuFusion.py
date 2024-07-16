@@ -51,12 +51,12 @@ vis.add_geometry(axis)
 # Imu fusion setup
 ahrs = imufusion.Ahrs()
 euler = np.empty((0, 3))
-sample_rate = 700 # A guess
+sample_rate = 100
 ahrs.settings = imufusion.Settings(imufusion.CONVENTION_NWU,  # convention
                                    0.5,  # gain
                                    1000,  # gyroscope range
                                    10,  # acceleration rejection
-                                   1,  # magnetic rejection, max difference bw algorithm and magnetometer before mag is ignored
+                                   10,  # magnetic rejection, max difference bw algorithm and magnetometer before mag is ignored
                                    5 * sample_rate)  # recovery trigger period = 5 seconds
 
 # Rejecting acc, mag is still rejected sometimes --> mag is unaligned with gyro
@@ -70,7 +70,7 @@ port.write(bytes([cnst.REQ]))
 
 # Loop
 running = True
-prevTime = time.time() # You need to put in dt between fusion updates!
+prevCounter = 0xFFFF # You need to put in dt between fusion updates!
 while running:
     data = read(port,unprocessedBytes,magCalOn=True)
     if data:
@@ -84,9 +84,14 @@ while running:
             # Takes gyro (1 by 3 matrix), acc (1 by 3 matrix), mag (1 by 3 matrix) and dt
             for reading in data['imu']:
 
+                # Turn clock counter into a time difference
+                if prevCounter > reading.time:
+                    dt = (prevCounter-reading.time)/(100*1000)
+                else:
+                    dt = (prevCounter+(0xFFFF-reading.time))/(100*1000) # 0xFFFF is the max counter (what clock resets to after reaching 0)
                 # Update sensor fusion
-                ahrs.update(np.array(reading.gyro), np.array(reading.acc), np.array(reading.mag), reading.time-prevTime) # Transpose M to make row vector again
-                prevTime = reading.time
+                ahrs.update(np.array(reading.gyro), np.array(reading.acc), np.array(reading.mag), dt) # Transpose M to make row vector again
+                prevCounter = reading.time
 
                 # Check status flags and internal states
                 flags = ahrs.flags

@@ -1,7 +1,6 @@
 # Imports constants
 import constants as cnst
 import serial
-import time
 import magCal
 
 # Function to convert single integer (base 10) into two's complement integer
@@ -102,7 +101,7 @@ def read(port, oldBytes:bytearray, magCalOn=True) -> dict:
                     print('Checksum Failed!')
 
                 # Check magnetometer status 2 register for magnetic sensor overflow
-                if packet[-2] & 0x08:
+                if packet[22] & 0x08:
                     print('Magnetic sensor overflow occurred')
 
                 # Magnetometer calibration. Sent as low then high bit. Invert Y and Z to align with acc/gyro
@@ -127,9 +126,8 @@ def read(port, oldBytes:bytearray, magCalOn=True) -> dict:
                     cnst.Cartesian(mag[0],mag[1],mag[2]),
                     # Temperature
                     twos((packet[14]<<8) | packet[15],2)/cnst.TEMP_SCALE_FAC + 21,
-
                     # Timestamp
-                    time.time()
+                    packet[23]<<8 | packet[24]
                 )
                 # Push to sensorData
                 result['imu'].append(newImu)
