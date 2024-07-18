@@ -20,7 +20,7 @@ def getPortHandle(port = "/dev/cu.HC-06", baud = 115200, timeout = 5):
 # Function to read and process serial data
 # port: port handle, oldBytes: bytes that haven't been processed yet (bytearray)
 # Returns false if no new bytes, otherwise returns dictionary with unprocessed data, lidar tuples (may be none), and imu tuples (may be none)
-def read(port, oldBytes:bytearray, magCalOn=True) -> dict:
+def read(port, oldBytes:bytearray, magCalOn=True, magAlignOn=True) -> dict:
 
     # Structure to return
     result = {
@@ -104,21 +104,21 @@ def read(port, oldBytes:bytearray, magCalOn=True) -> dict:
                 if packet[22] & 0x08:
                     print('Magnetic sensor overflow occurred')
 
-                # Magnetometer calibration. Sent as low then high bit. Invert Y and Z to align with acc/gyro
+                # Magnetometer sent as low then high bit.
                 mag = [twos(packet[16] | (packet[17]<<8),2)/cnst.MAG_SCALE_FAC, # x
-                       twos(packet[18] | (packet[19]<<8),2)/cnst.MAG_SCALE_FAC * -1, # y
-                       twos(packet[20] | (packet[21]<<8),2)/cnst.MAG_SCALE_FAC * -1] # z
-                
-                if magCalOn:
-                    mag = magCal.applyCalibration(mag)
+                       twos(packet[18] | (packet[19]<<8),2)/cnst.MAG_SCALE_FAC*-1, # y
+                       twos(packet[20] | (packet[21]<<8),2)/cnst.MAG_SCALE_FAC*-1] # z
+                # Calibration and alignment
+                if magCalOn or magAlignOn:
+                    mag = magCal.applyFactors(mag,magCalOn,magAlignOn)
 
                 # Make an imu tuple
                 newImu = cnst.Imu(
-                    # Acc x,y,z
-                    cnst.Cartesian(twos((packet[2]<<8) | packet[3],2)/cnst.ACC_SCALE_FAC,
-                            twos((packet[4]<<8) | packet[5],2)/cnst.ACC_SCALE_FAC,
-                            twos((packet[6]<<8) | packet[7],2)/cnst.ACC_SCALE_FAC),
-                    # Gyro x,y,z
+                    # Acc x,y,z. Invert y and z to make ENU and align with magnetometer (chip is face down)
+                    cnst.Cartesian(twos((packet[2]<<8) | packet[3],2)/cnst.ACC_SCALE_FAC*-1,
+                            twos((packet[4]<<8) | packet[5],2)/cnst.ACC_SCALE_FAC*-1,
+                            twos((packet[6]<<8) | packet[7],2)/cnst.ACC_SCALE_FAC*-1),
+                    # Gyro x,y,z. Invert y and z to make ENU and align with magnetometer (chip is face down)
                     cnst.Cartesian(twos((packet[8]<<8) | packet[9],2)/cnst.GYRO_SCALE_FAC,
                             twos((packet[10]<<8) | packet[11],2)/cnst.GYRO_SCALE_FAC,
                             twos((packet[12]<<8) | packet[13],2)/cnst.GYRO_SCALE_FAC),

@@ -49,7 +49,7 @@ unprocessedBytes = bytearray() # Store bytes in incomplete packet
 def dataGen(port,unprocessedBytes):
     while True:
         # Get data
-        data = bt.read(port, unprocessedBytes, magCalOn=True)
+        data = bt.read(port, unprocessedBytes, magCalOn=True, magAlignOn=True)
         # Update unprocessedBytes if data is returned
         if data:
             unprocessedBytes = data['bytes']

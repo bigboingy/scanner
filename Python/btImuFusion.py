@@ -51,8 +51,8 @@ vis.add_geometry(axis)
 # Imu fusion setup
 ahrs = imufusion.Ahrs()
 euler = np.empty((0, 3))
-sample_rate = 100
-ahrs.settings = imufusion.Settings(imufusion.CONVENTION_NWU,  # convention
+sample_rate = 100 # Hz
+ahrs.settings = imufusion.Settings(imufusion.CONVENTION_ENU,  # convention -  north west up
                                    0.5,  # gain
                                    1000,  # gyroscope range
                                    10,  # acceleration rejection
@@ -72,7 +72,7 @@ port.write(bytes([cnst.REQ]))
 running = True
 prevCounter = 0xFFFF # You need to put in dt between fusion updates!
 while running:
-    data = read(port,unprocessedBytes,magCalOn=True)
+    data = read(port,unprocessedBytes,magCalOn=True,magAlignOn=True)
     if data:
         unprocessedBytes = data['bytes'] # Update bytes storage
 

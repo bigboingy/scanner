@@ -2,4 +2,5 @@ Python/tempCodeRunnerFile.py
 *.pyc
 __pycache__
 Scanner Python.code-workspace
+*.DS_Store
 

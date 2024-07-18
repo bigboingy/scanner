@@ -76,9 +76,9 @@ def align(F,M,tol=0.001):
 
 
     # 1. Initialise delta and R
-    delta = (90-69)*math.pi/180 # Initial guess for inclination angle. In 'degrees down' it's -69
+    delta = -(90-69)*math.pi/180 # Initial guess for inclination angle. In 'degrees down' it's -69
     R = np.eye(3,3) # Rotation matrix
-    N = len(F) # How many readings
+    N = np.shape(F)[1] # How many readings
 
     # 2. Initialise constants
     # Alpha and beta - backtracking line search constants
@@ -86,6 +86,18 @@ def align(F,M,tol=0.001):
     beta = 0.5
     lmbda = 1
     mu = 1 # Lambda and mu are weightings applied to dJdR summands
+
+    # Function to calculate J depending on x, which is [[vecR],[delta]]
+    def getJ(x):
+        R = np.reshape(x[0:-1,0],(3,3)) # Get R and return it to a 3x3 matrix
+        delta = x[-1][0]
+        sinDelta = math.sin(delta)
+        J = 0
+        for k in range(N):
+            normProd = np.linalg.norm(F[:,k],ord=2)*np.linalg.norm(M[:,k],ord=2)
+            J += (sinDelta - (F[:,k].T @ R @ M[:,k])/normProd)**2 # A scalar
+        J += lmbda*np.linalg.norm(R@R.T-np.eye(3,3),ord='fro')**2 + mu*(np.linalg.det(R)-1)**2
+        return J
 
     # Loop
     J=None # Initialise J, we check how much it's changed from prev iter
@@ -107,19 +119,6 @@ def align(F,M,tol=0.001):
         dJdd = 2*math.cos(delta)*dJdd
 
         # 4. Work out step size, t
-        # Calculate J depending on x, which is [[vecR],[delta]]
-        def getJ(x):
-
-            R = np.reshape(x[0:-1,0],(3,3)) # Get R and return it to a 3x3 matrix
-            delta = x[-1][0]
-            sinDelta = math.sin(delta)
-            J = 0
-            for k in range(N):
-                normProd = np.linalg.norm(F[:,k],ord=2)*np.linalg.norm(M[:,k],ord=2)
-                J += (sinDelta - (F[:,k].T @ R @ M[:,k])/normProd)**2 # A scalar
-            J += lmbda*np.linalg.norm(R@R.T-np.eye(3,3),ord='fro')**2 + mu*(np.linalg.det(R)-1)**2
-            return J
-
         # Decrease t until condition satisfied
         t = 1
         gradJ = np.vstack((dJdR,dJdd))
@@ -146,7 +145,7 @@ def align(F,M,tol=0.001):
 # Function to read 'magCalParams' and apply T and h to a 3x1 or 1x3 magnetic field reading (Y).
 # Extended to apply R, rotation matrix to allign mag axes with acc's
 # Returns calibrated reading M (1x3 row vector)
-def applyCalibration(Y):
+def applyFactors(Y,calib=True,align=True):
     # Convert Y to np array if it's not already
     if not isinstance(Y,np.ndarray):
         Y = np.array(Y)
@@ -156,15 +155,21 @@ def applyCalibration(Y):
         Y = Y[:,None]
 
     # Get magnetometer calibration matrices
-    magCal = np.loadtxt('MagCalParams')
-    T_inv = magCal[:,0:3]
-    h = magCal[:,[3]] # Enclose 3 in list to force col vector
-    R = magCal[:,4:] 
+    if calib:
+        magCal = np.loadtxt('MagCalParams')
+        T_inv = magCal[:,0:3]
+        h = magCal[:,[3]] # Enclose 3 in list to force col vector
+        # Apply calibration before alignment
+        Y = T_inv@(Y-h)
 
-    # Apply calibration factors
-    M = R@(T_inv@(Y-h))[:,0] # Isolate the column, but return row vector for ease of access
+    # Get magnetometer alignment rotation matrix
+    if align:
+        R = np.loadtxt('MagAlignParam')
+        # Apply alignment 
+        Y = R@Y
 
-    return M
+    return Y[:,0] # Isolate the column, but returns a row vector for ease of access
+
 
 
 # Calibration routine
@@ -194,7 +199,7 @@ if __name__ == "__main__":
     # Loop
     while 1:
         # Read bt buffer
-        data = bt.read(port,unprocessedBytes,magCalOn=False)
+        data = bt.read(port,unprocessedBytes,magCalOn=False,magAlignOn=False)
 
         # If anything is read
         if data:
@@ -237,11 +242,20 @@ if __name__ == "__main__":
 
     # Allign mag with acc
     R,delta = align(acc,mag_cal)
+    print(f"R = {R} and delta = {delta*180/math.pi}")
 
-    # Save as txt file if desired
+    # Save calibration factors as txt file if desired
     save = input('Save calibration factors to file? y/n: ')
     if save == 'y':
-        np.savetxt('magCalParams',np.hstack((np.linalg.inv(T),h,R)))
-        # Format is [T^-1 h R]
+        np.savetxt('magCalParams',np.hstack((np.linalg.inv(T),h)))
+        # Format is [T^-1 h]
 
-    applyCalibration([1,1,1])
+    # Save alignmnet matrix
+    save = input('Save alignment factor to file? y/n: ')
+    if save == 'y':
+        np.savetxt('magAlignParam',R)
+
+        
+#applyFactors([1,2,3])
+
+
