@@ -1,7 +1,6 @@
 from bt import read
 import constants as cnst
 import serial
-import time
 import imufusion
 import numpy as np
 import open3d as o3d
@@ -55,7 +54,7 @@ sample_rate = 100 # Hz
 ahrs.settings = imufusion.Settings(imufusion.CONVENTION_ENU,  # convention -  north west up
                                    0.5,  # gain
                                    1000,  # gyroscope range
-                                   10,  # acceleration rejection
+                                   1,  # acceleration rejection
                                    10,  # magnetic rejection, max difference bw algorithm and magnetometer before mag is ignored
                                    5 * sample_rate)  # recovery trigger period = 5 seconds
 
@@ -100,7 +99,8 @@ while running:
                 if flags.acceleration_recovery: print('Acceleration recovery')
                 if flags.magnetic_recovery: print('Magnetic recovery')
                 states = ahrs.internal_states
-                if states.accelerometer_ignored: print('Accelerometer ignored')
+                if states.accelerometer_ignored:
+                    print('Accelerometer ignored, error: %.1f' % states.acceleration_error)
                 if states.magnetometer_ignored:
                     print('Magnetometer ignored, error: %.1f' % states.magnetic_error)
                 print('x')

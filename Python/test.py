@@ -101,6 +101,6 @@
 import numpy as np
 import magCal
 import math
-print(magCal.align(np.loadtxt('accSample'),np.loadtxt('magSample')))
+#print(magCal.align(np.loadtxt('accSample'),np.loadtxt('magSample')))
 a = 3
-print(-.86*180/math.pi)
+print(-.93*180/math.pi)

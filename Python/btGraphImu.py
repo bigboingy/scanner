@@ -58,7 +58,7 @@ def graphUpdate(btData):
             ax.relim()
             ax.autoscale()
 
-        for read in btData['imu']:
+        for read in btData['imu']: # debug
             print(read.time)
 
 unprocessedBytes = bytearray() # Store bytes in incomplete packet
@@ -66,7 +66,7 @@ unprocessedBytes = bytearray() # Store bytes in incomplete packet
 def dataGen(port,unprocessedBytes):
     while True:
         # Get data
-        data = read(port, unprocessedBytes, magCalOn=True, magAlignOn=False)
+        data = read(port, unprocessedBytes, magCalOn=True, magAlignOn=True)
         # Update unprocessedBytes if data is returned
         if data:
             unprocessedBytes = data['bytes']
