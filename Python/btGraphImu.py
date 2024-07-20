@@ -1,17 +1,13 @@
-import serial
+import calibration
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import numpy as np
 import constants as cnst
 from functools import partial
-from bt import read
+import bt
 
 # Open port
-port = serial.Serial(
-    port="/dev/cu.HC-06", baudrate=115200, bytesize=8, timeout=5, stopbits=serial.STOPBITS_ONE
-)
-# First request
-port.write(bytes([cnst.REQ]))
+port = bt.getPortHandle()
 
 # Graphing setup
 plt.style.use('fivethirtyeight')
@@ -34,17 +30,13 @@ ax2.legend(l2,('x','y','z'),loc='upper left')
 # Gets given bt every iteration from dataGen()
 def graphUpdate(btData):
 
-    if btData and len(btData['imu']):  # Only update if there's an imu value (length not zero)
-
-        port.write(bytes([cnst.REQ])) # First, respond so that timeout doesn't occur
-
         # For each axis (sensor) and then for each line (coordinate x/y/z)
         for sensor,ax in enumerate(fig.get_axes()): # Sensor is the index
             for coord,l in enumerate(ax.get_lines()):  # Coord is the index
 
                 newVals = np.empty(0)
                 # Grab all the new values
-                for read in btData['imu']:
+                for read in btData:
                     newVals = np.append(newVals,read[sensor][coord]) # Access sensor and coord using index (0/1/2)
 
                 oldData = l.get_ydata() # Get data from previous iteration
@@ -58,23 +50,33 @@ def graphUpdate(btData):
             ax.relim()
             ax.autoscale()
 
-        for read in btData['imu']: # debug
-            print(read.time)
 
-unprocessedBytes = bytearray() # Store bytes in incomplete packet
-# Function to yield bt data call
+port.write(bytes([cnst.REQ])) # First data request
+unprocessedBytes = bytearray() # Store bytes from incomplete packets
+
+import time
+lastTime = time.time()
+
+# Function to yield bt data when a full imu is received
 def dataGen(port,unprocessedBytes):
-    while True:
-        # Get data
-        data = read(port, unprocessedBytes, magCalOn=True, magAlignOn=True)
-        # Update unprocessedBytes if data is returned
-        if data:
-            unprocessedBytes = data['bytes']
-        # Pass data to graphUpdate
-        yield data
+
+    while True: # Encase in infinite loop to keep yielding
+
+        # Keep reading port until 1+ imus are found
+        data = []
+        while not data:
+            # Get data
+            data = bt.read(port, unprocessedBytes)["imu"]
+
+        port.write(bytes([cnst.REQ])) # Respond so that timeout doesn't occur
+
+        # Calibration
+        calibrated_data = calibration.applyCalibration(data)
+
+        yield calibrated_data # Pass data (imu tuple) to graphUpdate
 
 # Start the graphing animation
 # Interval is delay between next call of graphUpdate in ms
-GRAPH_INTERVAL = 100 # If 0, Limited by either call for serial data (which has a timeout) or computer speed. (ms)
+GRAPH_INTERVAL = 40 # (ms). On chip, timeout is at 50ms
 ani = animation.FuncAnimation(fig=fig, func=graphUpdate, frames = partial(dataGen,port,unprocessedBytes), cache_frame_data=False, interval=GRAPH_INTERVAL)
 plt.show()

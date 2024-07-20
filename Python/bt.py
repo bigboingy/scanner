@@ -1,7 +1,7 @@
 # Imports constants
 import constants as cnst
 import serial
-import magCal
+import algorithms
 
 # Function to convert single integer (base 10) into two's complement integer
 # In: val, length: how many bytes are being convreted
@@ -19,25 +19,22 @@ def getPortHandle(port = "/dev/cu.HC-06", baud = 115200, timeout = 5):
 
 # Function to read and process serial data
 # port: port handle, oldBytes: bytes that haven't been processed yet (bytearray)
-# Returns false if no new bytes, otherwise returns dictionary with unprocessed data, lidar tuples (may be none), and imu tuples (may be none)
-def read(port, oldBytes:bytearray, magCalOn=True, magAlignOn=True) -> dict:
+# Returns false if no new bytes, otherwise returns dictionary list of lidar tuples (may be none) and imu tuples (may be none)
+def read(port, bytesArray:bytearray) -> dict:
 
     # Structure to return
     result = {
-        'bytes': bytearray(),
         'lidar':[], # Contains lidar tuples
         'imu':[] # Imu tuples
     }
 
-    serialBytes = oldBytes # Get old data. This is a bytearray that stores bytes to process
-
     # 1. Read all available serial data and place in serialBytes array
     if port.in_waiting > 0:
-        serialBytes.extend(bytearray(port.read(port.in_waiting)))
+        bytesArray.extend(bytearray(port.read(port.in_waiting))) # Extends bytes object that was passed in
     else:
-        return False # Return false if no new data waiting
+        return result # Return empty result if no new data waiting
     
-    numBytes = len(serialBytes) # Get number of bytes to be processed
+    numBytes = len(bytesArray) # Get number of bytes to be processed
     
     # 2. Loop through bytes to find double frame headers
     skips = 0 # How many bytes can we skip past? (they have been read)
@@ -56,16 +53,15 @@ def read(port, oldBytes:bytearray, magCalOn=True, magAlignOn=True) -> dict:
 
         # Break if not enough bytes to read next byte
         if i+1 >= numBytes :
-            result['bytes'].extend(serialBytes[i:]) # Add unprocessed bytes to result
             break
 
         # Double frame header
         # Lidar frame header
-        if serialBytes[i] == cnst.LIDAR_HEADER and serialBytes[i+1] == cnst.LIDAR_HEADER:
+        if bytesArray[i] == cnst.LIDAR_HEADER and bytesArray[i+1] == cnst.LIDAR_HEADER:
             # Are there enough bytes in front?
-            if len(serialBytes[i:]) >= cnst.LIDAR_LENGTH:
+            if len(bytesArray[i:]) >= cnst.LIDAR_LENGTH:
                 # Isolate packet
-                packet = serialBytes[i:i+cnst.LIDAR_LENGTH]
+                packet = bytesArray[i:i+cnst.LIDAR_LENGTH]
                 # Check checksum
                 checksum = sum(packet[:-1])&0xFF
                 if checksum != packet[-1]:
@@ -85,16 +81,16 @@ def read(port, oldBytes:bytearray, magCalOn=True, magAlignOn=True) -> dict:
                 # Skip next 8 values
                 skips = cnst.LIDAR_LENGTH-1
                 continue
-            else:
-                result['bytes'].extend(serialBytes[i:]) # Add unprocessed bytes to result
-                break
+            else: # Not enough bytes, trim bytesArray
+                del bytesArray[0:i]
+                break 
 
         # IMU frame header
-        if serialBytes[i] == cnst.IMU_HEADER and serialBytes[i+1] == cnst.IMU_HEADER:
+        if bytesArray[i] == cnst.IMU_HEADER and bytesArray[i+1] == cnst.IMU_HEADER:
             # Are there enough bytes in front?
-            if len(serialBytes[i:]) >= cnst.IMU_LENGTH:
-                # Isolate packet
-                packet = serialBytes[i:i+cnst.IMU_LENGTH]
+            if len(bytesArray[i:]) >= cnst.IMU_LENGTH:
+                # Isolate packet, then delete from the bytesArary that was passed in
+                packet = bytesArray[i:i+cnst.IMU_LENGTH]
                 # Check checksum
                 checksum = sum(packet[:-1])&0xFF
                 if checksum != packet[-1]:
@@ -108,9 +104,9 @@ def read(port, oldBytes:bytearray, magCalOn=True, magAlignOn=True) -> dict:
                 mag = [twos(packet[16] | (packet[17]<<8),2)/cnst.MAG_SCALE_FAC, # x
                        twos(packet[18] | (packet[19]<<8),2)/cnst.MAG_SCALE_FAC*-1, # y
                        twos(packet[20] | (packet[21]<<8),2)/cnst.MAG_SCALE_FAC*-1] # z
-                # Calibration and alignment
-                if magCalOn or magAlignOn:
-                    mag = magCal.applyFactors(mag,magCalOn,magAlignOn)
+                # # Calibration and alignment
+                # if cnst.MAG_CAL or cnst.MAG_ALIGN:
+                #     mag = algorithms.applyFactors(mag)
 
                 # Make an imu tuple
                 newImu = cnst.Imu(
@@ -127,16 +123,16 @@ def read(port, oldBytes:bytearray, magCalOn=True, magAlignOn=True) -> dict:
                     # Temperature
                     twos((packet[14]<<8) | packet[15],2)/cnst.TEMP_SCALE_FAC + 21,
                     # Timestamp
-                    packet[23]<<8 | packet[24]
+                    (packet[23]<<8 | packet[24])/cnst.DATATIMER_FREQ # Convert to seconds
                 )
                 # Push to sensorData
                 result['imu'].append(newImu)
                 # Skip packet indices
                 skips = cnst.IMU_LENGTH-1
                 continue
-            else:
-                result['bytes'].extend(serialBytes[i:]) # Add unprocessed bytes to result
-                break
+            else: # Not enough bytes, trim bytesArray
+                del bytesArray[0:i]
+                break # Not enough bytes
     
         # If we come to a value that's not a frame header, go to next index (doesn't tend to happen)
         # This could be if there's a random byte between packets

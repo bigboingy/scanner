@@ -1,12 +1,17 @@
 import numpy as np
 import math
 
+# Replaced by calibration.py
+
 # Takes N magnetometer reading vectors and returns calibrated values, as well as T and h calibration parameters
 # Based on algorithm presented in https://ieeexplore.ieee.org/abstract/document/8723161
-# args:
-# Y (array_like), a 3xN matrix of magnetic field strength readings (should be more than 12).
-# tol (int), max % difference between iterations to consider converged
-def calibrate(Y,tol=0.001):
+# Args:
+# Y (array_like), a 3xN matrix of magnetic field strength readings.
+# tol (int), max % difference between iterations to consider converged.
+# Returns:
+# M, calibrated magnetometer data
+# T and h, calibration parameters
+def magCalibrate(Y,tol=0.001):
     # Convert Y to np array if it's not already
     if not isinstance(Y,np.ndarray):
         Y = np.array(Y)
@@ -14,8 +19,9 @@ def calibrate(Y,tol=0.001):
     # Get number of readings
     N = np.shape(Y)[1] 
 
-    # 1. Initialise M (true magnetic field vector) as normalised Y. Must specify 2-norm
+    # 1. Initialise M (true magnetic field vector) as normalised Y (must specify 2-norm), and G
     M = Y/np.linalg.norm(Y,axis=0,ord=2)
+    G = np.vstack((M,np.ones((1,N))))
 
     # Initialise lambda, set to ||T|| in first loop
     lmbd = 0
@@ -25,25 +31,15 @@ def calibrate(Y,tol=0.001):
     # Iterate
     while 1:
 
-        # Make G matrix
-        G = np.vstack((M,np.ones((1,N))))
-
-        # 2. Solve for L using least-squares, L=YGt(GGt)^-1
-        # Get G transpose
-        Gt = np.transpose(G)
-        # G*Gt
-        GGt = np.matmul(G,Gt)
-        # GGt^-1
-        GGt_inv = np.linalg.inv(GGt)
-        # L
-        L = np.matmul(Y,np.matmul(Gt,GGt_inv))
+        # 2. Make L=YGt(GGt)^-1
+        L = Y@G.T@np.linalg.inv(G@G.T)
 
         # 3. Extract T and h
         T = L[:,0:3]
         h = L[:,[3]]
 
         # 4. Update M
-        M_tilde = np.matmul(np.linalg.inv(T),(Y-h))
+        M_tilde = np.linalg.inv(T)@(Y-h)
         # Get norm of M_tilde vectors
         M = M_tilde/np.linalg.norm(M_tilde,axis=0,ord=2)
 
@@ -51,8 +47,12 @@ def calibrate(Y,tol=0.001):
         if not lmbd:
             lmbd = np.linalg.norm(T) # Set to norm of first iteration of T
 
-        # 6. Calculate J (step 5 in paper is skipped here as we recalculate G in the loop)
-        Jnew = sum(np.linalg.norm(Y-np.matmul(T,M)-h,axis=0,ord=2)**2 + lmbd * (np.linalg.norm(M,axis=0,ord=2)**2-1)**2 )
+        # 5. Update G
+        G = np.vstack((M,np.ones((1,N))))
+
+        # 6. Calculate J
+        Jnew = sum(np.linalg.norm(Y-T@M-h,axis=0,ord=2)**2 + lmbd * (np.linalg.norm(M_tilde,axis=0,ord=2)**2-1)**2 ) # Paper has M instead of M_tilde
+        #Jnew = sum((np.linalg.norm(M_tilde,axis=0,ord=2)**2-1)) - what a review recommends
         print(Jnew)
         # Is this J small enough?
         if J and abs(J-Jnew)/J < tol/100:
@@ -63,9 +63,14 @@ def calibrate(Y,tol=0.001):
         J = Jnew
 
 # Function to align mag axis with acc
-# Gradient descent method
-# F: Acc values, M: mag values (numpy arrays), tol: stopping criteria (max % difference between iterations to consider converged)
-# Returns R (rotation matrix applied to calibrated mag data) and delta (magnetic field inclination angle)
+# Uses the gradient descent method
+# Args:
+# F, 3xN matrix of acc values
+# M, 3xN matrix of mag values 
+# tol, stopping criteria (max % difference between iterations to consider converged)
+# Returns:
+# R, rotation matrix to applied to mag data to align with acc
+# delta, magnetic field inclination angle
 def align(F,M,tol=0.001):
 
     # Convert F and M to np array if they aren't already
@@ -74,9 +79,8 @@ def align(F,M,tol=0.001):
     if not isinstance(M,np.ndarray):
         M = np.array(M)
 
-
     # 1. Initialise delta and R
-    delta = -(90-69)*math.pi/180 # Initial guess for inclination angle. In 'degrees down' it's -69
+    delta = -69*math.pi/180 # Initial guess for inclination angle. Negative means M points upwards
     R = np.eye(3,3) # Rotation matrix
     N = np.shape(F)[1] # How many readings
 
@@ -141,7 +145,6 @@ def align(F,M,tol=0.001):
         # If not, update J
         J = Jnew
         
-
 # Function to read 'magCalParams' and apply T and h to a 3x1 or 1x3 magnetic field reading (Y).
 # Extended to apply R, rotation matrix to allign mag axes with acc's
 # Returns calibrated reading M (1x3 row vector)

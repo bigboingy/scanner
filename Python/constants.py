@@ -2,6 +2,9 @@
 LIDAR_ON = 0
 IMU_ON = 1
 
+# DataTimer frequency (Hz)
+DATATIMER_FREQ = 100*1000
+
 # How many bytes are the packets? (including header and checksum)
 LIDAR_LENGTH = 9
 IMU_LENGTH = 26

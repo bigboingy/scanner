@@ -1,15 +1,13 @@
-from bt import read
+import bt
 import constants as cnst
-import serial
 import imufusion
 import numpy as np
 import open3d as o3d
+import calibration
 
 # Open port
 # timeout waits for return of requested no. bytes specified in read() function, and also in port opening
-port = serial.Serial(
-    port="/dev/cu.HC-06", baudrate=115200, bytesize=8, timeout=5, stopbits=serial.STOPBITS_ONE
-)
+port = bt.getPortHandle()
 
 # Open3d visualisation
 vis = o3d.visualization.Visualizer()
@@ -50,11 +48,11 @@ vis.add_geometry(axis)
 # Imu fusion setup
 ahrs = imufusion.Ahrs()
 euler = np.empty((0, 3))
-sample_rate = 100 # Hz
+sample_rate = 200 # Hz
 ahrs.settings = imufusion.Settings(imufusion.CONVENTION_ENU,  # convention -  north west up
                                    0.5,  # gain
                                    1000,  # gyroscope range
-                                   1,  # acceleration rejection
+                                   10,  # acceleration rejection
                                    10,  # magnetic rejection, max difference bw algorithm and magnetometer before mag is ignored
                                    5 * sample_rate)  # recovery trigger period = 5 seconds
 
@@ -67,51 +65,66 @@ unprocessedBytes = bytearray()
 # Make initial request for data
 port.write(bytes([cnst.REQ]))
 
+
+import time
+now = time.time()
+max=0
 # Loop
 running = True
 prevCounter = 0xFFFF # You need to put in dt between fusion updates!
 while running:
-    data = read(port,unprocessedBytes,magCalOn=True,magAlignOn=True)
-    if data:
-        unprocessedBytes = data['bytes'] # Update bytes storage
-
-        # If there's a complete lidar reading
-        if data['imu']:
-            port.write(bytes([cnst.REQ])) # Respond so that timeout doesn't occur
-
-            # Fusion
-            # Takes gyro (1 by 3 matrix), acc (1 by 3 matrix), mag (1 by 3 matrix) and dt
-            for reading in data['imu']:
-
-                # Turn clock counter into a time difference
-                if prevCounter > reading.time:
-                    dt = (prevCounter-reading.time)/(100*1000)
-                else:
-                    dt = (prevCounter+(0xFFFF-reading.time))/(100*1000) # 0xFFFF is the max counter (what clock resets to after reaching 0)
-                # Update sensor fusion
-                ahrs.update(np.array(reading.gyro), np.array(reading.acc), np.array(reading.mag), dt) # Transpose M to make row vector again
-                prevCounter = reading.time
-
-                # Check status flags and internal states
-                flags = ahrs.flags
-                if flags.initialising: print('Initialising')
-                if flags.angular_rate_recovery: print('Angular rate recovery')
-                if flags.acceleration_recovery: print('Acceleration recovery')
-                if flags.magnetic_recovery: print('Magnetic recovery')
-                states = ahrs.internal_states
-                if states.accelerometer_ignored:
-                    print('Accelerometer ignored, error: %.1f' % states.acceleration_error)
-                if states.magnetometer_ignored:
-                    print('Magnetometer ignored, error: %.1f' % states.magnetic_error)
-                print('x')
-                
-
-            # Update geometry
-            line_set.points = o3d.utility.Vector3dVector(points) # Reset points
-            line_set.rotate(ahrs.quaternion.to_matrix()) # Apply rotation
-            vis.update_geometry(line_set)
-
+    # These run all the time
     running = vis.poll_events() # Returns false on window close
     vis.update_renderer()
+
+
+
+    # Read serial buffer
+    data = bt.read(port, unprocessedBytes)["imu"]
+    # If 1+ imu has come through...
+    if data:
+        port.write(bytes([cnst.REQ])) # Respond so that timeout doesn't occur
+        if(time.time()-now > max):
+            max=time.time()-now
+            
+        now=time.time()
+        print(max) #need to incr timeout. add ability to specify either no. reads or continuous operation (high timeout e.g. 500ms)
+
+        # Calibrate
+        data_cal = calibration.applyCalibration(data)
+
+        # Fusion
+        # Takes gyro (1 by 3 matrix), acc (1 by 3 matrix), mag (1 by 3 matrix) and dt
+        for reading in data_cal:
+
+            # Turn clock counter into a time difference
+            if prevCounter > reading.time:
+                dt = prevCounter-reading.time
+            else:
+                dt = prevCounter+(0xFFFF/cnst.DATATIMER_FREQ-reading.time) # 0xFFFF is the max counter (what clock resets to after reaching 0)
+            # Update sensor fusion
+            ahrs.update(np.array(reading.gyro), np.array(reading.acc), np.array(reading.mag), dt) # Transpose M to make row vector again
+            prevCounter = reading.time
+
+            # Check status flags and internal states
+            flags = ahrs.flags
+            if flags.initialising: print('Initialising')
+            if flags.angular_rate_recovery: print('Angular rate recovery')
+            if flags.acceleration_recovery: print('Acceleration recovery')
+            if flags.magnetic_recovery: print('Magnetic recovery')
+            states = ahrs.internal_states
+            if states.accelerometer_ignored:
+                print('Accelerometer ignored, error: %.1f' % states.acceleration_error)
+            if states.magnetometer_ignored:
+                print('Magnetometer ignored, error: %.1f' % states.magnetic_error)
+            print('x')
+            
+
+        # Update geometry
+        line_set.points = o3d.utility.Vector3dVector(points) # Reset points
+        line_set.rotate(ahrs.quaternion.to_matrix()) # Apply rotation
+        vis.update_geometry(line_set)
+
+
 
 vis.destroy_window()
