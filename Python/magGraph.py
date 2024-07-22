@@ -39,7 +39,7 @@ def graphUpdate(data):
 
 
 unprocessedBytes = bytearray() # Store bytes in incomplete packet
-port.write(bytes([cnst.REQ])) # First request
+bt.write(port,lidarOn=False,imuOn=True,singleRead=False) # First data request
 # Function to yield bt data call
 def dataGen(port,unprocessedBytes):
     while True: # Encase in infinite loop to keep yielding
@@ -48,7 +48,7 @@ def dataGen(port,unprocessedBytes):
             # Get data
             data = bt.read(port, unprocessedBytes)["imu"]
 
-        port.write(bytes([cnst.REQ])) # Respond so that timeout doesn't occur
+        bt.write(port,lidarOn=False,imuOn=True,singleRead=False) # Respond so that timeout doesn't occur
 
         # Calibration
         calibrated_data = calibration.applyCalibration(data)

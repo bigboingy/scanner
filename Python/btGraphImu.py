@@ -50,16 +50,18 @@ def graphUpdate(btData):
             ax.relim()
             ax.autoscale()
 
+        # Test calibration
+        for read in btData:
+            print(f'mag norm:{np.linalg.norm(read.mag,ord=2)}')
+            print(f'acc norm:{np.linalg.norm(read.acc,ord=2)}')
 
-port.write(bytes([cnst.REQ])) # First data request
+
+
+bt.write(port,lidarOn=False,imuOn=True,singleRead=False) # First data request
 unprocessedBytes = bytearray() # Store bytes from incomplete packets
-
-import time
-lastTime = time.time()
 
 # Function to yield bt data when a full imu is received
 def dataGen(port,unprocessedBytes):
-
     while True: # Encase in infinite loop to keep yielding
 
         # Keep reading port until 1+ imus are found
@@ -68,15 +70,15 @@ def dataGen(port,unprocessedBytes):
             # Get data
             data = bt.read(port, unprocessedBytes)["imu"]
 
-        port.write(bytes([cnst.REQ])) # Respond so that timeout doesn't occur
+        bt.write(port,lidarOn=False,imuOn=True,singleRead=False) # Respond to avoid timeout
 
         # Calibration
-        calibrated_data = calibration.applyCalibration(data)
+        calibrated_data = calibration.applyCalibration(data,accCal=True)
 
         yield calibrated_data # Pass data (imu tuple) to graphUpdate
 
 # Start the graphing animation
 # Interval is delay between next call of graphUpdate in ms
-GRAPH_INTERVAL = 40 # (ms). On chip, timeout is at 50ms
+GRAPH_INTERVAL = 100 # (ms). On chip, timeout is at 150ms
 ani = animation.FuncAnimation(fig=fig, func=graphUpdate, frames = partial(dataGen,port,unprocessedBytes), cache_frame_data=False, interval=GRAPH_INTERVAL)
 plt.show()

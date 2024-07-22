@@ -11,6 +11,7 @@ import math
 # Returns:
 # M, calibrated magnetometer data
 # T and h, calibration parameters
+# This function can also be used to calibrate accelerometer data! This is bcs both acc/mag magnitude should be constant w orientation
 def magCalibrate(Y,tol=0.001):
     # Convert Y to np array if it's not already
     if not isinstance(Y,np.ndarray):
@@ -65,31 +66,30 @@ def magCalibrate(Y,tol=0.001):
 # Function to align mag axis with acc
 # Uses the gradient descent method
 # Args:
-# F, 3xN matrix of acc values
-# M, 3xN matrix of mag values 
+# A, 3xN matrix of calibrated acc values
+# M, 3xN matrix of calbrated mag values 
 # tol, stopping criteria (max % difference between iterations to consider converged)
 # Returns:
 # R, rotation matrix to applied to mag data to align with acc
 # delta, magnetic field inclination angle
-def align(F,M,tol=0.001):
+def magAlign(A,M,tol=0.001):
 
     # Convert F and M to np array if they aren't already
-    if not isinstance(F,np.ndarray):
-        F = np.array(F)
+    if not isinstance(A,np.ndarray):
+        A = np.array(A)
     if not isinstance(M,np.ndarray):
         M = np.array(M)
 
     # 1. Initialise delta and R
     delta = -69*math.pi/180 # Initial guess for inclination angle. Negative means M points upwards
     R = np.eye(3,3) # Rotation matrix
-    N = np.shape(F)[1] # How many readings
+    N = np.shape(A)[1] # How many readings
 
     # 2. Initialise constants
-    # Alpha and beta - backtracking line search constants
-    alpha = 0.1
+    alpha = 0.1 # Alpha and beta are backtracking line search constants
     beta = 0.5
-    lmbda = 1
-    mu = 1 # Lambda and mu are weightings applied to dJdR summands
+    lmbda = 1 # Lambda and mu are weightings applied to dJdR summands
+    mu = 1 
 
     # Function to calculate J depending on x, which is [[vecR],[delta]]
     def getJ(x):
@@ -98,8 +98,8 @@ def align(F,M,tol=0.001):
         sinDelta = math.sin(delta)
         J = 0
         for k in range(N):
-            normProd = np.linalg.norm(F[:,k],ord=2)*np.linalg.norm(M[:,k],ord=2)
-            J += (sinDelta - (F[:,k].T @ R @ M[:,k])/normProd)**2 # A scalar
+            normProd = np.linalg.norm(A[:,k],ord=2)*np.linalg.norm(M[:,k],ord=2)
+            J += (sinDelta - (A[:,k].T @ R @ M[:,k])/normProd)**2 # A scalar
         J += lmbda*np.linalg.norm(R@R.T-np.eye(3,3),ord='fro')**2 + mu*(np.linalg.det(R)-1)**2
         return J
 
@@ -111,10 +111,10 @@ def align(F,M,tol=0.001):
         dJdd = np.zeros((1,1)) # 1x1
         sinDelta = math.sin(delta)
         for k in range(N):
-            normProd = np.linalg.norm(F[:,k],ord=2)*np.linalg.norm(M[:,k],ord=2)
-            part1 = sinDelta - (F[:,k].T @ R @ M[:,k])/normProd # A scalar
+            normProd = np.linalg.norm(A[:,k],ord=2)*np.linalg.norm(M[:,k],ord=2)
+            part1 = sinDelta - (A[:,k].T @ R @ M[:,k])/normProd # A scalar
             dJdd += part1
-            part2 = part1 * np.reshape(np.kron(M[:,k],F[:,k])/normProd,(9,1)) # Need to reshape otherwise it goes row
+            part2 = part1 * np.reshape(np.kron(M[:,k],A[:,k])/normProd,(9,1)) # Need to reshape otherwise it goes row
             dJdR += part2
 
         detR = np.linalg.det(R)
@@ -122,11 +122,12 @@ def align(F,M,tol=0.001):
         dJdR = -2*dJdR + 4*lmbda*np.reshape(R@R.T@R-R,(9,1)) + 2*mu*(detR-1)*np.reshape( (detR*np.linalg.inv(R)).T , (9,1) ) # Vectorise into col vectors
         dJdd = 2*math.cos(delta)*dJdd
 
+        gradJ = np.vstack((dJdR,dJdd))
+        deltaX = -gradJ
+
         # 4. Work out step size, t
         # Decrease t until condition satisfied
         t = 1
-        gradJ = np.vstack((dJdR,dJdd))
-        deltaX = -gradJ
         x = np.vstack( ( np.reshape(R,(9,1)) , delta ))
         while getJ(x + t*deltaX) > getJ(x) + alpha*t*((gradJ.T)@deltaX)[0][0] : # Need the two zeros to get value out from doubly enclosed list
             t = beta*t
@@ -145,120 +146,35 @@ def align(F,M,tol=0.001):
         # If not, update J
         J = Jnew
         
-# Function to read 'magCalParams' and apply T and h to a 3x1 or 1x3 magnetic field reading (Y).
-# Extended to apply R, rotation matrix to allign mag axes with acc's
-# Returns calibrated reading M (1x3 row vector)
-def applyFactors(Y,calib=True,align=True):
+# Function to calibrate gyro, incidentally aligning it with mag and acc axes
+# In paper, superscript n is the rotation and subscript j is the sample no. during rotation
+# Need to supply 3+ rotations. For each rotation need: acc+mag readings at start and end, gyro readings at start during and end.
+# 
+# Args: a delicious yam
+# Y, a list of N (number of rotations) 3xMn matrices of gyro values (Mn is no. samples in nth rotation)
+# A, a 3x(N+1) matrix containing acc vectors taken at start and end each rotation
+# M, a 3x(N+1) matrix containing mag vectors taken at start and end each rotation
+#
+# Returns:
+# G, calibrated gyro data
+# Tg and hg, gyro calibration parameters
+def gyroCalibrate(Y,A,M):
     # Convert Y to np array if it's not already
     if not isinstance(Y,np.ndarray):
         Y = np.array(Y)
 
-    # Convert to column vector if it's a row vector
-    if np.shape(Y)[0] == 3:
-        Y = Y[:,None]
+    # 1. Initialise Hg and hg, where Hg = Tg^−1
+    H = np.eye(3,3)
+    h = np.zeros((3,1))
 
-    # Get magnetometer calibration matrices
-    if calib:
-        magCal = np.loadtxt('MagCalParams')
-        T_inv = magCal[:,0:3]
-        h = magCal[:,[3]] # Enclose 3 in list to force col vector
-        # Apply calibration before alignment
-        Y = T_inv@(Y-h)
+    # 2. Initialise a and b (t initialised in loop)
+    alpha = 0.1
+    beta = 0.5
 
-    # Get magnetometer alignment rotation matrix
-    if align:
-        R = np.loadtxt('MagAlignParam')
-        # Apply alignment 
-        Y = R@Y
-
-    return Y[:,0] # Isolate the column, but returns a row vector for ease of access
-
-
-
-# Calibration routine
-if __name__ == "__main__":
-    # a = [[1,2,3,4,5,6],[6,5,4,3,2,1],[3,4,3,4,3,4]]
-    # b = [[2,5,2,5,2,6],[4,7,2,4,7,2],[2,5,2,6,4,2]]
-    # align(a,b)
-    
-
-    import bt
-    import constants as cnst
-    import time
-    import matplotlib.pyplot as plt
-
-    port = bt.getPortHandle()
-    # Store bytes from incomplete packets
-    unprocessedBytes = bytearray()
-    # Make initial request for data
-    port.write(bytes([cnst.REQ]))
-    # Collect mag data as a 3xN matrix
-    mag = [[],[],[]]
-    # Collect acc data as a 3xN matrix
-    acc = [[],[],[]]
-    # Timer
-    startTime = time.time()
-    TIMEOUT = 20
-    # Loop
+    # Loop breaks when J(x) is less than the tolerance 
     while 1:
-        # Read bt buffer
-        data = bt.read(port,unprocessedBytes,magCalOn=False,magAlignOn=False)
-
-        # If anything is read
-        if data:
-            unprocessedBytes = data['bytes'] # Update bytes storage
-
-            # If there's a complete lidar reading
-            if data['imu']:
-                port.write(bytes([cnst.REQ])) # Respond so that timeout doesn't occur
-
-                # Put mag and acc data into storage lists
-                for reading in data['imu']:
-                    mag[0].append(reading.mag.x)
-                    mag[1].append(reading.mag.y)
-                    mag[2].append(reading.mag.z)
-                    acc[0].append(reading.acc.x)
-                    acc[1].append(reading.acc.y)
-                    acc[2].append(reading.acc.z)
-
-        # Check if user wants more time
-        if time.time()-startTime > TIMEOUT:
-            inp = input("Ready? y/n: ")
-            if inp == 'y':
-                break
-            else:
-                startTime = time.time() # Give more time
-
-    # Plot uncalibrated readings
-    fig = plt.figure(figsize=(12, 12))
-    ax = fig.add_subplot(projection='3d')
-    ax.scatter(mag[0], mag[1], mag[2])
-
-    # Get calibration factors
-    mag_cal,T,h = calibrate(mag)
-
-    # Plot calibrated readings
-    fig1 = plt.figure(figsize=(12, 12))
-    ax1 = fig1.add_subplot(projection='3d')
-    ax1.scatter(mag_cal[0,:], mag_cal[1,:], mag_cal[2,:])
-    plt.show()
-
-    # Allign mag with acc
-    R,delta = align(acc,mag_cal)
-    print(f"R = {R} and delta = {delta*180/math.pi}")
-
-    # Save calibration factors as txt file if desired
-    save = input('Save calibration factors to file? y/n: ')
-    if save == 'y':
-        np.savetxt('magCalParams',np.hstack((np.linalg.inv(T),h)))
-        # Format is [T^-1 h]
-
-    # Save alignmnet matrix
-    save = input('Save alignment factor to file? y/n: ')
-    if save == 'y':
-        np.savetxt('magAlignParam',R)
-
+        # 3. Calculate the gradient 
+        ... 
         
-#applyFactors([1,2,3])
 
 

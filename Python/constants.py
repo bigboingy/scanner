@@ -1,7 +1,3 @@
-# Controls - what is being requested?
-LIDAR_ON = 0
-IMU_ON = 1
-
 # DataTimer frequency (Hz)
 DATATIMER_FREQ = 100*1000
 
@@ -14,9 +10,9 @@ LIDAR_HEADER = 0x59
 IMU_HEADER = 0x58
 
 # Values sent over bt to request data
-LIDAR_REQ = 1<<0
-IMU_REQ   = 1<<1
-REQ = (LIDAR_ON*LIDAR_REQ) | (IMU_ON*IMU_REQ) # Set the request byte
+LIDAR_REQ   = 1 << 0
+IMU_REQ     = 1 << 1
+SINGLE_READ = 1 << 2
 
 # Scales for accelerometer and gyroscope. Can be 0,1,2,3. Used for obtaining sensor values
 ACC_SCALE = 1

@@ -47,9 +47,8 @@ vis.add_geometry(axis)
 
 # Imu fusion setup
 ahrs = imufusion.Ahrs()
-euler = np.empty((0, 3))
 sample_rate = 200 # Hz
-ahrs.settings = imufusion.Settings(imufusion.CONVENTION_ENU,  # convention -  north west up
+ahrs.settings = imufusion.Settings(imufusion.CONVENTION_ENU,  # convention - east north up
                                    0.5,  # gain
                                    1000,  # gyroscope range
                                    10,  # acceleration rejection
@@ -60,39 +59,26 @@ ahrs.settings = imufusion.Settings(imufusion.CONVENTION_ENU,  # convention -  no
 # Rejecting mag, acc is not rejected --> acc agrees with gyro
 # Mag is unaligned with gyro/acc --> allign
 
-# Store bytes from incomplete packets
+# Store bytes from incomplete packets, for bt.read
 unprocessedBytes = bytearray()
 # Make initial request for data
-port.write(bytes([cnst.REQ]))
-
-
-import time
-now = time.time()
-max=0
+bt.write(port,lidarOn=False,imuOn=True,singleRead=False)
 # Loop
 running = True
-prevCounter = 0xFFFF # You need to put in dt between fusion updates!
+prevCounter = 0xFFFF/cnst.DATATIMER_FREQ # Initialisation. You need to put in dt between fusion updates!
 while running:
     # These run all the time
     running = vis.poll_events() # Returns false on window close
     vis.update_renderer()
 
-
-
     # Read serial buffer
     data = bt.read(port, unprocessedBytes)["imu"]
     # If 1+ imu has come through...
     if data:
-        port.write(bytes([cnst.REQ])) # Respond so that timeout doesn't occur
-        if(time.time()-now > max):
-            max=time.time()-now
-            
-        now=time.time()
-        print(max) #need to incr timeout. add ability to specify either no. reads or continuous operation (high timeout e.g. 500ms)
-
+        
+        bt.write(port,lidarOn=False,imuOn=True,singleRead=False) # Respond so that timeout doesn't occur
         # Calibrate
         data_cal = calibration.applyCalibration(data)
-
         # Fusion
         # Takes gyro (1 by 3 matrix), acc (1 by 3 matrix), mag (1 by 3 matrix) and dt
         for reading in data_cal:
@@ -102,6 +88,7 @@ while running:
                 dt = prevCounter-reading.time
             else:
                 dt = prevCounter+(0xFFFF/cnst.DATATIMER_FREQ-reading.time) # 0xFFFF is the max counter (what clock resets to after reaching 0)
+            
             # Update sensor fusion
             ahrs.update(np.array(reading.gyro), np.array(reading.acc), np.array(reading.mag), dt) # Transpose M to make row vector again
             prevCounter = reading.time
@@ -119,7 +106,6 @@ while running:
                 print('Magnetometer ignored, error: %.1f' % states.magnetic_error)
             print('x')
             
-
         # Update geometry
         line_set.points = o3d.utility.Vector3dVector(points) # Reset points
         line_set.rotate(ahrs.quaternion.to_matrix()) # Apply rotation

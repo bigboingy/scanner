@@ -108,10 +108,18 @@ a = np.array([1,2,3])
 print(a**2)
 
 Y = np.loadtxt('magSample')
-calibration.applyCalibration(Y)
+# calibration.applyCalibration(Y)
 #print(algorithms.magCalibrate(Y))
 
-a = (1,2,3)
-b = np.empty((3,1))
-b[:,0] = a
-print(b)
+for i in range(10):
+    print(i)
+    if i == 5: break
+
+print(i)
+
+import bt
+for i in range(65000):
+    print(bt.twos(i,2 ))
+
+print(bt.twos(0xfc00,2))
+print(bin(0xfc00))

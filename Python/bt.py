@@ -4,10 +4,10 @@ import serial
 import algorithms
 
 # Function to convert single integer (base 10) into two's complement integer
-# In: val, length: how many bytes are being convreted
+# In: val, length: how many bytes are being converted
 # Out: two's complement of the integer
 def twos(val: int, length: int) -> int:
-    byte = val.to_bytes(length, byteorder='big', signed=False) # Convert to byte object
+    byte = val.to_bytes(length, byteorder='big', signed=False) # Convert to byte object, big endian
     return int.from_bytes(byte, byteorder='big', signed=True) # Use inbuilt 2s complement conversion
 
 
@@ -16,6 +16,14 @@ def getPortHandle(port = "/dev/cu.HC-06", baud = 115200, timeout = 5):
     return serial.Serial(
         port=port, baudrate=baud, bytesize=8, timeout=timeout, stopbits=serial.STOPBITS_ONE
     )
+
+# Function for formatting and sending bt requests
+# Reads is how many reads to request before shutting output off, defaults to 0 which is unlimited reads
+def write(port,lidarOn:bool,imuOn:bool,reads:int=0):
+    # Make request byte
+    request = bytes([ lidarOn*cnst.LIDAR_REQ | imuOn*cnst.IMU_REQ | singleRead*cnst.SINGLE_READ ]) # Need to enclose in list to specify byte
+    # Send request
+    port.write(request)
 
 # Function to read and process serial data
 # port: port handle, oldBytes: bytes that haven't been processed yet (bytearray)
@@ -66,6 +74,8 @@ def read(port, bytesArray:bytearray) -> dict:
                 checksum = sum(packet[:-1])&0xFF
                 if checksum != packet[-1]:
                     print('Checksum Failed!')
+                    skips = cnst.IMU_LENGTH-1 # Skip past this packet
+                    continue
                 # Make a lidar dataclass
                 newLidar = cnst.Lidar(
                 packet[2] + (packet[3]<<8), # Dist
@@ -81,45 +91,42 @@ def read(port, bytesArray:bytearray) -> dict:
                 # Skip next 8 values
                 skips = cnst.LIDAR_LENGTH-1
                 continue
-            else: # Not enough bytes, trim bytesArray
-                del bytesArray[0:i]
+            else: # Not enough bytes
                 break 
 
         # IMU frame header
         if bytesArray[i] == cnst.IMU_HEADER and bytesArray[i+1] == cnst.IMU_HEADER:
             # Are there enough bytes in front?
             if len(bytesArray[i:]) >= cnst.IMU_LENGTH:
-                # Isolate packet, then delete from the bytesArary that was passed in
+                # Isolate packet
                 packet = bytesArray[i:i+cnst.IMU_LENGTH]
                 # Check checksum
                 checksum = sum(packet[:-1])&0xFF
                 if checksum != packet[-1]:
                     print('Checksum Failed!')
+                    skips = cnst.IMU_LENGTH-1 # Skip past this packet
+                    continue
 
                 # Check magnetometer status 2 register for magnetic sensor overflow
                 if packet[22] & 0x08:
                     print('Magnetic sensor overflow occurred')
-
-                # Magnetometer sent as low then high bit.
-                mag = [twos(packet[16] | (packet[17]<<8),2)/cnst.MAG_SCALE_FAC, # x
-                       twos(packet[18] | (packet[19]<<8),2)/cnst.MAG_SCALE_FAC*-1, # y
-                       twos(packet[20] | (packet[21]<<8),2)/cnst.MAG_SCALE_FAC*-1] # z
-                # # Calibration and alignment
-                # if cnst.MAG_CAL or cnst.MAG_ALIGN:
-                #     mag = algorithms.applyFactors(mag)
+                    skips = cnst.IMU_LENGTH-1 # Skip past this packet
+                    continue
 
                 # Make an imu tuple
                 newImu = cnst.Imu(
-                    # Acc x,y,z. Invert y and z to make ENU and align with magnetometer (chip is face down)
+                    # Acc x,y,z. (big endian) Negatives added experimentally
                     cnst.Cartesian(twos((packet[2]<<8) | packet[3],2)/cnst.ACC_SCALE_FAC*-1,
                             twos((packet[4]<<8) | packet[5],2)/cnst.ACC_SCALE_FAC*-1,
                             twos((packet[6]<<8) | packet[7],2)/cnst.ACC_SCALE_FAC*-1),
-                    # Gyro x,y,z. Invert y and z to make ENU and align with magnetometer (chip is face down)
+                    # Gyro x,y,z. (big endian)
                     cnst.Cartesian(twos((packet[8]<<8) | packet[9],2)/cnst.GYRO_SCALE_FAC,
                             twos((packet[10]<<8) | packet[11],2)/cnst.GYRO_SCALE_FAC,
                             twos((packet[12]<<8) | packet[13],2)/cnst.GYRO_SCALE_FAC),
-                    # Mag x,y,z
-                    cnst.Cartesian(mag[0],mag[1],mag[2]),
+                    # Mag x,y,z (read as low then high bit, little endian)
+                    cnst.Cartesian(twos(packet[16] | (packet[17]<<8),2)/cnst.MAG_SCALE_FAC,
+                       twos(packet[18] | (packet[19]<<8),2)/cnst.MAG_SCALE_FAC*-1,
+                       twos(packet[20] | (packet[21]<<8),2)/cnst.MAG_SCALE_FAC*-1),
                     # Temperature
                     twos((packet[14]<<8) | packet[15],2)/cnst.TEMP_SCALE_FAC + 21,
                     # Timestamp
@@ -130,12 +137,15 @@ def read(port, bytesArray:bytearray) -> dict:
                 # Skip packet indices
                 skips = cnst.IMU_LENGTH-1
                 continue
-            else: # Not enough bytes, trim bytesArray
-                del bytesArray[0:i]
+            else:
                 break # Not enough bytes
     
         # If we come to a value that's not a frame header, go to next index (doesn't tend to happen)
-        # This could be if there's a random byte between packets
+        # This could be the first bytes that come in, or if there's a random byte between packets
         continue
 
+    # 3. Trim bytes that we have looked at, and return result
+    del bytesArray[0:i]
+    if len(bytesArray) > cnst.IMU_LENGTH:
+        ...
     return result
