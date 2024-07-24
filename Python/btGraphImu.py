@@ -7,7 +7,7 @@ from functools import partial
 import bt
 
 # Open port
-port = bt.getPortHandle()
+port = bt.getPortHandle(port="COM8")
 
 # Graphing setup
 plt.style.use('fivethirtyeight')
@@ -54,7 +54,7 @@ def graphUpdate(btData):
         for read in btData:
             #print(f'mag norm:{np.linalg.norm(read.mag,ord=2)}')
             #print(f'acc norm:{np.linalg.norm(read.acc,ord=2)}')
-            print(read.time)
+            print(read.time*1000)
 
 
 
