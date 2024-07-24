@@ -64,20 +64,45 @@ if __name__ == "__main__":
     unprocessedBytes = bytearray() # Store bytes from incomplete packets, is updated by bt.read.
     # We should only be getting 1 imu at a time as singleRead=True
 
-    # 1. On user input, grab one IMU reading over bt, until NO_READS is satisfied
+    # Function that takes a list of imu tuples and returns one imu tuple with their averaged data
+    def imuAv(imus):
+        n = len(imus)
+        ax,ay,az,gx,gy,gz,mx,my,mz,temp,time = 0,0,0,0,0,0,0,0,0,0,0 # Sums for averaging
+        for imu in imus:
+            ax += imu.acc.x
+            ay += imu.acc.y
+            az += imu.acc.z
+            gx += imu.gyro.x
+            gy += imu.gyro.y
+            gz += imu.gyro.z
+            mx += imu.mag.x
+            my += imu.mag.y
+            mz += imu.mag.z
+            temp += imu.temp
+            time += imu.time # Time might be stuffed up if counter resets, but doesn't matter for this application
+        averagedImu = cnst.Imu(cnst.Cartesian(ax/n,ay/n,az/n),cnst.Cartesian(gx/n,gy/n,gz/n),cnst.Cartesian(mx/n,my/n,mz/n),temp/n,time/n)
+        return averagedImu
+
+    # 1. On user input, grab bunches of IMU readings over bt to average, until NO_READS is satisfied
     NO_READS = 15 # How many datapoints
+    STAT_AV = 25 # How many reads are taken at stationary datapoints, to be averaged
     imus = [] # Store IMU tuples here
     while len(imus) < NO_READS:
         inp = input("Press enter to take next reading.") # Blocking
-        # Get one reading
-        bt.write(port,lidarOn=False,imuOn=True,singleRead=True) # Single read imu request
-        
-        # Loop while there's no imu yet
-        imu = []
-        while not imu:
+
+        # Get readings
+        bt.write(port,lidarOn=False,imuOn=True,count=STAT_AV)
+        # Loop while we don't have all the requested imus yet
+        imus_toAverage = []
+        while len(imus_toAverage) < STAT_AV:
             imu = bt.read(port,unprocessedBytes)["imu"]
-        imus.append(imu[0]) # Take first imu received
-        print(f"Reading taken: {imu}")
+            if imu:
+                imus_toAverage.extend(imu) # bt.read returns a list of tuples, so we extend rather than append
+
+        # Average the imus and add to imus list
+        avImu = imuAv(imus_toAverage)
+        imus.append(avImu)
+        print(f"Reading taken: {avImu}")
     
     # Fill arrays
     N = len(imus) # How many readings?

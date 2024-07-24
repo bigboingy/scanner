@@ -47,7 +47,7 @@ vis.add_geometry(axis)
 
 # Imu fusion setup
 ahrs = imufusion.Ahrs()
-sample_rate = 200 # Hz
+sample_rate = 100 # Hz. On average 100 Hz when I set minlooptime to 10ms
 ahrs.settings = imufusion.Settings(imufusion.CONVENTION_ENU,  # convention - east north up
                                    0.5,  # gain
                                    1000,  # gyroscope range
@@ -62,7 +62,7 @@ ahrs.settings = imufusion.Settings(imufusion.CONVENTION_ENU,  # convention - eas
 # Store bytes from incomplete packets, for bt.read
 unprocessedBytes = bytearray()
 # Make initial request for data
-bt.write(port,lidarOn=False,imuOn=True,singleRead=False)
+bt.write(port,lidarOn=False,imuOn=True,count=0)
 # Loop
 running = True
 prevCounter = 0xFFFF/cnst.DATATIMER_FREQ # Initialisation. You need to put in dt between fusion updates!
@@ -76,7 +76,7 @@ while running:
     # If 1+ imu has come through...
     if data:
         
-        bt.write(port,lidarOn=False,imuOn=True,singleRead=False) # Respond so that timeout doesn't occur
+        bt.write(port,lidarOn=False,imuOn=True,count=0) # Respond so that timeout doesn't occur
         # Calibrate
         data_cal = calibration.applyCalibration(data)
         # Fusion

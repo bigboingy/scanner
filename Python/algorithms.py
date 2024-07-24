@@ -91,9 +91,9 @@ def magAlign(A,M,tol=0.001):
     lmbda = 1 # Lambda and mu are weightings applied to dJdR summands
     mu = 1 
 
-    # Function to calculate J depending on x, which is [[vecR],[delta]]
+    # Function to calculate J depending on x, which is [vecR.T, delta].T
     def getJ(x):
-        R = np.reshape(x[0:-1,0],(3,3)) # Get R and return it to a 3x3 matrix
+        R = np.reshape(x[0:-1,0],(3,3),order='F') # Get R and return it to a 3x3 matrix. Order = F means read/place column wise
         delta = x[-1][0]
         sinDelta = math.sin(delta)
         J = 0
@@ -118,23 +118,21 @@ def magAlign(A,M,tol=0.001):
             dJdR += part2
 
         detR = np.linalg.det(R)
-
         dJdR = -2*dJdR + 4*lmbda*np.reshape(R@R.T@R-R,(9,1)) + 2*mu*(detR-1)*np.reshape( (detR*np.linalg.inv(R)).T , (9,1) ) # Vectorise into col vectors
         dJdd = 2*math.cos(delta)*dJdd
-
         gradJ = np.vstack((dJdR,dJdd))
         deltaX = -gradJ
 
         # 4. Work out step size, t
-        # Decrease t until condition satisfied
+        # Decrease t until condition satisfied. Order = F means flatten column wise
         t = 1
-        x = np.vstack( ( np.reshape(R,(9,1)) , delta ))
+        x = np.vstack( ( np.reshape(R.flatten(order='F'),(9,1)) , delta ))
         while getJ(x + t*deltaX) > getJ(x) + alpha*t*((gradJ.T)@deltaX)[0][0] : # Need the two zeros to get value out from doubly enclosed list
             t = beta*t
 
         # 5. Update R and delta
         xNew = x + t*deltaX
-        R = np.reshape(xNew[0:-1,0],(3,3))
+        R = np.reshape(xNew[0:-1,0],(3,3),order='F')
         delta = xNew[-1][0]
 
         # 6. Calculate J
@@ -150,18 +148,31 @@ def magAlign(A,M,tol=0.001):
 # In paper, superscript n is the rotation and subscript j is the sample no. during rotation
 # Need to supply 3+ rotations. For each rotation need: acc+mag readings at start and end, gyro readings at start during and end.
 # 
-# Args: a delicious yam
+# Args: 
 # Y, a list of N (number of rotations) 3xMn matrices of gyro values (Mn is no. samples in nth rotation)
-# A, a 3x(N+1) matrix containing acc vectors taken at start and end each rotation
-# M, a 3x(N+1) matrix containing mag vectors taken at start and end each rotation
+# A, a 3x2N matrix containing acc vectors taken at start and end each rotation (averaged)
+# M, a 3x2N matrix containing mag vectors taken at start and end each rotation (averaged)
+# wStill is a 3x1 matrix containg gyro vector when IMU is stationary (averaged)
+# Freq is the sample rate (Hz)
+# tol is the stopping criteria (max % difference between iterations to consider converged)
 #
 # Returns:
 # G, calibrated gyro data
 # Tg and hg, gyro calibration parameters
-def gyroCalibrate(Y,A,M):
-    # Convert Y to np array if it's not already
-    if not isinstance(Y,np.ndarray):
-        Y = np.array(Y)
+def gyroCalibrate(Y,A,M,freq,wStill,tol=0.001):
+    # Convert elements of Y to np array if they aren't already
+    if not isinstance(Y[0],np.ndarray):
+        for i in range(len(Y)):
+            Y[i] = np.array(Y[i])
+    # Convert A to np array if it's not already
+    if not isinstance(A,np.ndarray):
+        A = np.array(A)
+    # Convert M to np array if it's not already
+    if not isinstance(M,np.ndarray):
+        M = np.array(M)
+
+    # How many rotations?
+    N = len(Y)
 
     # 1. Initialise Hg and hg, where Hg = Tg^−1
     H = np.eye(3,3)
@@ -170,11 +181,124 @@ def gyroCalibrate(Y,A,M):
     # 2. Initialise a and b (t initialised in loop)
     alpha = 0.1
     beta = 0.5
+    lmbda = 1 # Applied to 2nd summand when finding J
+    epsilon = np.finfo(np.float64).eps # Machine epsilon
 
-    # Loop breaks when J(x) is less than the tolerance 
+
+    # Function to get Ram for a single rotation
+    # Inputs are 3x1 column vectors
+    # np.norm defaults to 2-norm for vectors. np.cross needs axis=0 for column vectors
+    def getRam(fbegin,fend,mbegin,mend):
+
+        # Construct column vectors
+        a1 = fbegin
+        a2 = np.cross(fbegin,mbegin,axis=0)/np.linalg.norm(np.cross(fbegin,mbegin,axis=0))
+        a3 = np.cross(fbegin,np.cross(fbegin,mbegin,axis=0),axis=0)/np.linalg.norm(np.cross(fbegin,mbegin,axis=0))
+        b1 = fend
+        b2 = np.cross(fend,mend,axis=0)/np.linalg.norm(np.cross(fend,mend,axis=0))
+        b3 = np.cross(fend,np.cross(fend,mend,axis=0),axis=0)/np.linalg.norm(np.cross(fend,mend,axis=0))
+        
+        # Calculate rotation matrix
+        Ram = np.hstack((b1,b2,b3)) @ np.hstack((a1,a2,a3)).T
+        return Ram
+    
+    # Ram is constant, calculate them here (one for each rot)
+    Ram_list = []
+    # For each rotation
+    for i in range(N):
+        # There are two readings per rotation
+        Ram = getRam(A[:,[2*i]],A[:,[2*i+1]],M[:,[2*i]],M[:,[2*i+1]])
+        Ram_list.append(Ram)
+
+    # Function to get Rg for a single rotation
+    # Uses uncalibrated gyroscope data w, a 3xMn matrix
+    # Calibrates the data with H and h
+    def getRg(w,H,h):
+
+        # How mamy samples? Columns of w
+        K = np.shape(w)[1]
+
+        # Calibrate w
+        w_tilde = H@(w-h)
+
+        # Make R
+        Rg = np.eye(3,3)
+        for k in range(K): # For each read (column)
+            wk = w_tilde[:,k] # This read, as a row vector
+            omega = np.array([ [0,-wk[2],wk[1]], [wk[2],0,-wk[0]], [-wk[1],wk[0],0] ]) # Make omega
+            Rg = Rg @ (np.eye(3,3) + freq*omega)
+
+        return Rg
+
+    # Function to return J (scalar)
+    # x is defined as [vec(Hg).T hg.T].T (column)
+    def getJ(x):
+        # Extract Hg and hg
+        H = np.reshape(x[0:9,0],(3,3),order='F') # Get H and return it to a 3x3 matrix
+        h = np.reshape(x[-3:,0],(3,1),order='F') # Need reshape to make a column vector
+
+        # Calculate Rg for each rotation
+        Rg_list = []
+        for i in range(N):
+            Rg = getRg(Y[i],H,h)
+            Rg_list.append(Rg)
+
+        # Calculate J
+        J = 0
+        # First, calculate first summand
+        for i in range(N):
+            J += np.linalg.norm(Ram_list[i]-Rg_list[i],ord=2)**2
+
+        # Then, add on second summand
+        J += lmbda*np.linalg.norm(H@(wStill-h))**2
+
+        return J
+
+    # Loop breaks when J(x) is less than the tolerance
+    J = None # Initialise J
     while 1:
-        # 3. Calculate the gradient 
-        ... 
+        # 3. Calculate the gradient of J numerically: f' = [ f(x+h) - f(x-h) ]/ 2h, for each element of x
+        gradJ = np.empty((12,1)) # Preallocate 9x1 vector
+
+        # Make x [vec(Hg).T hg.T].T 
+        x = np.vstack( ( np.reshape(H.flatten(order='F'),(9,1)) , np.reshape(h.flatten(order='F'),(3,1)) ))
+
+        # Work out how J changes when changing each variable in x
+        MIN_X = 0.01 # How close to zero can x be to use the optimised h formula?
+        for i in range(len(x)):
+            if abs(x[i]) < MIN_X:
+                h = 0.001 # Default to this if preferred formula can't be used
+            else:
+                h = epsilon**(1/3)*x[i] # Optimal stepsize
+            # Calculate gradient
+            gradJ[i] = (getJ(x+h) - getJ(x-h))/(2*h)
+        # We move opposite to gradient (steepest descent)    
+        deltaX = -gradJ
+
+        # 4. Backtracking line search
+        t = 1
+        while getJ(x + t*deltaX) > getJ(x) + (alpha*t*gradJ.T@deltaX)[0][0]: # Get value from double list
+            t = beta*t # Reduce stepsize
+        
+        # 5. Update x using x=x+t*deltaX, and set its contents
+        xNew = x + t*deltaX
+        H = np.reshape(xNew[0:9,0],(3,3),order='F')
+        h = np.reshape(xNew[-3:,0],(3,1),order='F')
+
+        # 6. Calculate J
+        Jnew = getJ(xNew)
+        print(Jnew)
+
+        # Is this J small enough?
+        if J and abs(J-Jnew)/J < tol/100:
+            return H,h # Retrun calibration parameters
+        # If not, update J
+        J = Jnew
+
+        
+
+
+ 
         
 
 

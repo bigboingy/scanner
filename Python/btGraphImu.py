@@ -50,14 +50,15 @@ def graphUpdate(btData):
             ax.relim()
             ax.autoscale()
 
-        # Test calibration
+        # Debug
         for read in btData:
-            print(f'mag norm:{np.linalg.norm(read.mag,ord=2)}')
-            print(f'acc norm:{np.linalg.norm(read.acc,ord=2)}')
+            #print(f'mag norm:{np.linalg.norm(read.mag,ord=2)}')
+            #print(f'acc norm:{np.linalg.norm(read.acc,ord=2)}')
+            print(read.time)
 
 
 
-bt.write(port,lidarOn=False,imuOn=True,singleRead=False) # First data request
+bt.write(port,lidarOn=False,imuOn=True,count=0) # First data request
 unprocessedBytes = bytearray() # Store bytes from incomplete packets
 
 # Function to yield bt data when a full imu is received
@@ -70,11 +71,10 @@ def dataGen(port,unprocessedBytes):
             # Get data
             data = bt.read(port, unprocessedBytes)["imu"]
 
-        bt.write(port,lidarOn=False,imuOn=True,singleRead=False) # Respond to avoid timeout
+        bt.write(port,lidarOn=False,imuOn=True,count=0) # Respond to avoid timeout
 
         # Calibration
         calibrated_data = calibration.applyCalibration(data,accCal=True)
-
         yield calibrated_data # Pass data (imu tuple) to graphUpdate
 
 # Start the graphing animation

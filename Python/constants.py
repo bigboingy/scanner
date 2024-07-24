@@ -1,5 +1,5 @@
 # DataTimer frequency (Hz)
-DATATIMER_FREQ = 100*1000
+DATATIMER_FREQ = 100*1000 # One counter is a 100th of a ms
 
 # How many bytes are the packets? (including header and checksum)
 LIDAR_LENGTH = 9
@@ -12,7 +12,8 @@ IMU_HEADER = 0x58
 # Values sent over bt to request data
 LIDAR_REQ   = 1 << 0
 IMU_REQ     = 1 << 1
-SINGLE_READ = 1 << 2
+CONT_MODE   = 1 << 2
+COUNT_SHIFT = lambda x: x<<3
 
 # Scales for accelerometer and gyroscope. Can be 0,1,2,3. Used for obtaining sensor values
 ACC_SCALE = 1

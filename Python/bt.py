@@ -1,7 +1,6 @@
 # Imports constants
 import constants as cnst
 import serial
-import algorithms
 
 # Function to convert single integer (base 10) into two's complement integer
 # In: val, length: how many bytes are being converted
@@ -12,16 +11,19 @@ def twos(val: int, length: int) -> int:
 
 
 # Function to open port, returning port handle
-def getPortHandle(port = "/dev/cu.HC-06", baud = 115200, timeout = 5):
+def getPortHandle(port = "/dev/cu.HC-05", baud = 115200, timeout = 5):
     return serial.Serial(
         port=port, baudrate=baud, bytesize=8, timeout=timeout, stopbits=serial.STOPBITS_ONE
     )
 
 # Function for formatting and sending bt requests
-# Reads is how many reads to request before shutting output off, defaults to 0 which is unlimited reads
-def write(port,lidarOn:bool,imuOn:bool,reads:int=0):
+# Count is how many reads to request before shutting output off, defaults to 0 which is unlimited reads (sets cont_mode), max is 31 (5 bit)
+def write(port,lidarOn:bool,imuOn:bool,count:int=0):
     # Make request byte
-    request = bytes([ lidarOn*cnst.LIDAR_REQ | imuOn*cnst.IMU_REQ | singleRead*cnst.SINGLE_READ ]) # Need to enclose in list to specify byte
+    request = bytes([   cnst.COUNT_SHIFT(count) |
+                        (not bool(count))*cnst.CONT_MODE |
+                        imuOn*cnst.IMU_REQ |
+                        lidarOn*cnst.LIDAR_REQ ]) # Need to enclose in list to specify byte
     # Send request
     port.write(request)
 
@@ -104,14 +106,12 @@ def read(port, bytesArray:bytearray) -> dict:
                 checksum = sum(packet[:-1])&0xFF
                 if checksum != packet[-1]:
                     print('Checksum Failed!')
-                    skips = cnst.IMU_LENGTH-1 # Skip past this packet
-                    continue
+                    continue # Try next bit
 
                 # Check magnetometer status 2 register for magnetic sensor overflow
                 if packet[22] & 0x08:
                     print('Magnetic sensor overflow occurred')
-                    skips = cnst.IMU_LENGTH-1 # Skip past this packet
-                    continue
+                    continue # Try next bit
 
                 # Make an imu tuple
                 newImu = cnst.Imu(
