@@ -372,14 +372,16 @@ int main(void)
     
     uint16 readTime; // To send over bt, to work out dt
     
-    uint16 const MIN_LOOP_TIME = 10u; // How many ms should the loop go for minimum? 5u seems to be too fast for hc05, but hc06 is fine
+    uint16 const MIN_LOOP_TIME = 10u; // How many ms should the loop go for minimum? With a byte delay of 200us, loop lasts ~8ms, setting to
+                                      // 10ms keeps sample rate more predictable
     uint16 startTime; // What counter value are we up to at start of loop?
     uint16 endTime;
     uint16 loopInterval;
     uint16 const MAX_COUNTER = 0xFFFF; // Max value a uint16 can take, used to find interval if clock cycle restarts
     
-    uint8 const UART_BYTE_DELAY = 80u; // UART send delay in us, baud is 115200, 70us is about one byte.
+    uint8 const UART_BYTE_DELAY = 200u; // UART send delay in us, baud is 115200, 70us is about one byte.
                                        // Setting to 60 causes data loss at i2c transfer
+                                        // Experimentally, hc05 needs 200us delay between bytes minimum. hc06 can handle less.
     for(;;)
     {
         // Set start time
