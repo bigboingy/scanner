@@ -9,6 +9,7 @@ import constants as cnst
 import algorithms
 import numpy as np
 import math
+import time
 
 # Function to apply calibration facrtors to a list of imu tuples (as returned by bt read)
 def applyCalibration(imus:list,magCal:bool=True,accCal=True,magAlign:bool=True,gyroCal:bool=True):
@@ -60,9 +61,8 @@ def applyCalibration(imus:list,magCal:bool=True,accCal=True,magAlign:bool=True,g
 # Calibration routine
 if __name__ == "__main__":
 
-    port = bt.getPortHandle()
+    port = bt.getPortHandle(port="/dev/cu.HC-06")
     unprocessedBytes = bytearray() # Store bytes from incomplete packets, is updated by bt.read.
-    # We should only be getting 1 imu at a time as singleRead=True
 
     # Function that takes a list of imu tuples and returns one imu tuple with their averaged data
     def imuAv(imus):
@@ -82,36 +82,98 @@ if __name__ == "__main__":
             time += imu.time # Time might be stuffed up if counter resets, but doesn't matter for this application
         averagedImu = cnst.Imu(cnst.Cartesian(ax/n,ay/n,az/n),cnst.Cartesian(gx/n,gy/n,gz/n),cnst.Cartesian(mx/n,my/n,mz/n),temp/n,time/n)
         return averagedImu
-
-    # 1. On user input, grab bunches of IMU readings over bt to average, until NO_READS is satisfied
-    NO_READS = 15 # How many datapoints
-    STAT_AV = 25 # How many reads are taken at stationary datapoints, to be averaged
-    imus = [] # Store IMU tuples here
-    while len(imus) < NO_READS:
-        inp = input("Press enter to take next reading.") # Blocking
-
-        # Get readings
+    
+    # no is how many are being averaged
+    def getAvImu(no):
+        # Request readings to be averaged
         bt.write(port,lidarOn=False,imuOn=True,count=STAT_AV)
         # Loop while we don't have all the requested imus yet
         imus_toAverage = []
-        while len(imus_toAverage) < STAT_AV:
+        while len(imus_toAverage) < no:
             imu = bt.read(port,unprocessedBytes)["imu"]
             if imu:
                 imus_toAverage.extend(imu) # bt.read returns a list of tuples, so we extend rather than append
+                if len(imus_toAverage) < STAT_AV:
+                    bt.write(port,lidarOn=False,imuOn=True,count=STAT_AV-len(imus_toAverage)) # Respond to avoid timeout, if not enought yet
 
-        # Average the imus and add to imus list
-        avImu = imuAv(imus_toAverage)
-        imus.append(avImu)
-        print(f"Reading taken: {avImu}")
+        # Average the imus
+        avImu = imuAv(imus_toAverage[0:STAT_AV])
+
+        # Return
+        return avImu
+
+    # 1. On user input, grab bunches of IMU readings over bt to average, until NO_READS is satisfied
+    # At certain reads, track IMU moving between two points instead.
+    # Gyrocope still reading is taken in first read (must be still)
     
-    # Fill arrays
-    N = len(imus) # How many readings?
-    A,G,M = np.empty((3,N)),np.empty((3,N)),np.empty((3,N))
-    for i in range(N):
-        A[:,i] = imus[i].acc.x,imus[i].acc.y,imus[i].acc.z
-        G[:,i] = imus[i].gyro.x,imus[i].gyro.y,imus[i].gyro.z
-        M[:,i] = imus[i].mag.x,imus[i].mag.y,imus[i].mag.z
+    NO_READS = 15 # How many datapoints
+    STAT_AV = 25 # How many reads are taken at stationary datapoints, to be averaged
+    ROT_TIME = 1 # How many seconds does rotation go for?
+    moving_reads = [2,7,12] # Which reads are moving?
+    static_imus = [] # Store static IMU tuples here, used for mag+acc cal and alignment, and gyro cal and alignment
+    moving_imus = [] # Store moving IMUs here, a list of lists of imus in a rotation, used for gyro cal and alignment
+    for i in range(1,NO_READS+1): # Go from 1 so that i matches what read we are up to
 
+        # If the next read is a rotation, prepare for rotation
+        if i+1 in moving_reads:
+            input("Press enter to start rotation.") # Wait until user is ready
+            imu = getAvImu(STAT_AV)
+            static_imus.append(imu)
+            print(f"Reading taken: {imu}")
+
+        # Rotation
+        elif i in moving_reads:
+            # We don't wait, we go directly into rotation
+            rot = [] # Put imus here
+            start = time.time()
+            bt.write(port,lidarOn=False,imuOn=True,count=0) # Unlimited request
+            # Will there be a lag here?
+            while time.time()-start < ROT_TIME:
+                print(f"Rotation time remaining: {round(ROT_TIME - (time.time()-start),2)}")
+                # Read data and push to rot
+                data = bt.read(port,unprocessedBytes)["imu"]
+                if data:
+                    rot.extend(data)
+                    bt.write(port,lidarOn=False,imuOn=True,count=0) # Maintain request
+            print('Rotation finished')
+            moving_imus.append(rot) # Add list to list
+            
+        # End of rotation
+        elif i-1 in moving_reads:
+            imu = getAvImu(STAT_AV)
+            static_imus.append(imu)
+            print(f"Reading taken: {imu}")
+            
+
+        # Static read
+        else:
+            input("Press enter to take static reading.") # Wait until user is ready
+            imu = getAvImu(STAT_AV)
+            static_imus.append(imu)
+            print(f"Reading taken: {imu}")
+
+    # Generate arrays and arguments
+    # Static
+    Ns = len(static_imus) # How many static readings?
+    A,G,M = np.empty((3,Ns)),np.empty((3,Ns)),np.empty((3,Ns)) # Static arrays
+    for i in range(Ns):
+        A[:,i] = static_imus[i].acc.x,static_imus[i].acc.y,static_imus[i].acc.z
+        G[:,i] = static_imus[i].gyro.x,static_imus[i].gyro.y,static_imus[i].gyro.z
+        M[:,i] = static_imus[i].mag.x,static_imus[i].mag.y,static_imus[i].mag.z
+    # Gyro rotations
+    Y = [] # List with a list for each rotation
+    for rot in moving_imus: # Each rotation list full of imus
+        Nr = len(rot) # How many imus in this rotation
+        Yrot = np.empty((3,Nr)) # List for this rotation
+        for i in range(Nr): # Each imu index in the rotation
+            Yrot[:,i] = rot[i].gyro.x, rot[i].gyro.y, rot[i].gyro.z
+        Y.append(Yrot)
+    # Isolate start/end of rotations from static arrays for gyroCalibrate
+    Ar = A[]
+    # Others for gyroCalibrate
+    freq = 100 # Sample rate
+    wStill = static_imus[0].gyro # Will be converted into column vec in algorithms
+    
     # 2. Calibrate magnetometer
     M_cal,Tm,hm = algorithms.magCalibrate(M)
     # Save T^-1 and h to file
@@ -127,3 +189,5 @@ if __name__ == "__main__":
     print(f"R = {R} and delta = {delta*180/math.pi}")
     # Save alignmnet matrix R
     np.savetxt('params_magAlign',R)
+
+    # 5. Calibrate and align gyro

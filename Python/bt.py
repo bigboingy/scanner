@@ -17,11 +17,19 @@ def getPortHandle(port = "/dev/cu.HC-05", baud = 115200, timeout = 5):
     )
 
 # Function for formatting and sending bt requests
-# Count is how many reads to request before shutting output off, defaults to 0 which is unlimited reads (sets cont_mode), max is 31 (5 bit)
-def write(port,lidarOn:bool,imuOn:bool,count:int=0):
+# Count is how many reads to add to count before output stops
+# Count defaults to -1 which is unlimited reads (sets cont_mode), max is 31 (5 bit)
+def write(port,lidarOn:bool,imuOn:bool,count:int=-1):
+
+    # Continuous read if count is -1
+    if count == -1:
+        cont = 1
+        count = 0 # Set count to 0 now
+    else: cont = 0
+
     # Make request byte
     request = bytes([   cnst.COUNT_SHIFT(count) |
-                        (not bool(count))*cnst.CONT_MODE |
+                        cont*cnst.CONT_MODE |
                         imuOn*cnst.IMU_REQ |
                         lidarOn*cnst.LIDAR_REQ ]) # Need to enclose in list to specify byte
     # Send request

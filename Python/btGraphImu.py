@@ -2,7 +2,6 @@ import calibration
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import numpy as np
-import constants as cnst
 from functools import partial
 import bt
 
@@ -58,7 +57,7 @@ def graphUpdate(btData):
 
 
 
-bt.write(port,lidarOn=False,imuOn=True,count=0) # First data request
+bt.write(port,lidarOn=False,imuOn=True,count=-1) # First data request
 unprocessedBytes = bytearray() # Store bytes from incomplete packets
 
 # Function to yield bt data when a full imu is received
@@ -71,7 +70,7 @@ def dataGen(port,unprocessedBytes):
             # Get data
             data = bt.read(port, unprocessedBytes)["imu"]
 
-        bt.write(port,lidarOn=False,imuOn=True,count=0) # Respond to avoid timeout
+        bt.write(port,lidarOn=False,imuOn=True,count=-1) # Respond to avoid timeout
 
         # Calibration
         calibrated_data = calibration.applyCalibration(data,accCal=True)
