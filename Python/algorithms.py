@@ -170,6 +170,8 @@ def gyroCalibrate(Y,A,M,freq,wStill,tol=0.001):
     # Convert M to np array if it's not already
     if not isinstance(M,np.ndarray):
         M = np.array(M)
+    if not isinstance(wStill,np.ndarray):
+        wStill = np.reshape(np.array(wStill),(3,1)) # Make into column vector
 
     # How many rotations?
     N = len(Y)
