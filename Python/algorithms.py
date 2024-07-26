@@ -1,8 +1,6 @@
 import numpy as np
 import math
 
-# Replaced by calibration.py
-
 # Takes N magnetometer reading vectors and returns calibrated values, as well as T and h calibration parameters
 # Based on algorithm presented in https://ieeexplore.ieee.org/abstract/document/8723161
 # Args:
@@ -69,10 +67,11 @@ def magCalibrate(Y,tol=0.001):
 # A, 3xN matrix of calibrated acc values
 # M, 3xN matrix of calbrated mag values 
 # tol, stopping criteria (max % difference between iterations to consider converged)
+# delta0, initial guess for inclination angle. Negative means M points upwards. Degrees
 # Returns:
 # R, rotation matrix to applied to mag data to align with acc
 # delta, magnetic field inclination angle
-def magAlign(A,M,tol=0.001):
+def magAlign(A,M,delta0=-69,tol=0.001):
 
     # Convert F and M to np array if they aren't already
     if not isinstance(A,np.ndarray):
@@ -81,7 +80,7 @@ def magAlign(A,M,tol=0.001):
         M = np.array(M)
 
     # 1. Initialise delta and R
-    delta = -69*math.pi/180 # Initial guess for inclination angle. Negative means M points upwards
+    delta = delta0*math.pi/180 # Convert to radians
     R = np.eye(3,3) # Rotation matrix
     N = np.shape(A)[1] # How many readings
 
