@@ -7,7 +7,7 @@ import calibration
 
 # Open port
 # timeout waits for return of requested no. bytes specified in read() function, and also in port opening
-port = bt.getPortHandle()
+port = bt.getPortHandle(port="/dev/cu.HC-05")
 
 # Open3d visualisation
 vis = o3d.visualization.Visualizer()
@@ -62,7 +62,7 @@ ahrs.settings = imufusion.Settings(imufusion.CONVENTION_ENU,  # convention - eas
 # Store bytes from incomplete packets, for bt.read
 unprocessedBytes = bytearray()
 # Make initial request for data
-bt.write(port,lidarOn=False,imuOn=True,count=0)
+bt.write(port,lidarOn=False,imuOn=True,count=-1)
 # Loop
 running = True
 prevCounter = 0xFFFF/cnst.DATATIMER_FREQ # Initialisation. You need to put in dt between fusion updates!
@@ -76,7 +76,7 @@ while running:
     # If 1+ imu has come through...
     if data:
         
-        bt.write(port,lidarOn=False,imuOn=True,count=0) # Respond so that timeout doesn't occur
+        bt.write(port,lidarOn=False,imuOn=True,count=-1) # Respond so that timeout doesn't occur
         # Calibrate
         data_cal = calibration.applyCalibration(data)
         # Fusion
@@ -110,7 +110,5 @@ while running:
         line_set.points = o3d.utility.Vector3dVector(points) # Reset points
         line_set.rotate(ahrs.quaternion.to_matrix()) # Apply rotation
         vis.update_geometry(line_set)
-
-
 
 vis.destroy_window()
