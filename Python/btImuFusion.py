@@ -78,7 +78,7 @@ while running:
         
         bt.write(port,lidarOn=False,imuOn=True,count=-1) # Respond so that timeout doesn't occur
         # Calibrate
-        data_cal = calibration.applyCalibration(data)
+        data_cal = calibration.applyCalibration(data,gyroCal=True)
         # Fusion
         # Takes gyro (1 by 3 matrix), acc (1 by 3 matrix), mag (1 by 3 matrix) and dt
         for reading in data_cal:

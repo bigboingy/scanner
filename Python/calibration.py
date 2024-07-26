@@ -128,7 +128,7 @@ if __name__ == "__main__":
             # We don't wait, we go directly into rotation
             rot = [] # Put imus here
             start = time.time()
-            bt.write(port,lidarOn=False,imuOn=True,count=0) # Unlimited request
+            bt.write(port,lidarOn=False,imuOn=True,count=-1) # Unlimited request
             # Will there be a lag here?
             while time.time()-start < ROT_TIME:
                 print(f"Rotation time remaining: {round(ROT_TIME - (time.time()-start),2)}")
@@ -136,7 +136,7 @@ if __name__ == "__main__":
                 data = bt.read(port,unprocessedBytes)["imu"]
                 if data:
                     rot.extend(data)
-                    bt.write(port,lidarOn=False,imuOn=True,count=0) # Maintain request
+                    bt.write(port,lidarOn=False,imuOn=True,count=-1) # Maintain request
             print('Rotation finished')
             moving_imus.append(rot) # Add list to list
             
@@ -201,5 +201,6 @@ if __name__ == "__main__":
 
     # 5. Calibrate and align gyro
     Hg,hg = algorithms.gyroCalibrate(Y,A_surr,M_surr,freq,wStill)
+    print(f"Tg = {np.linalg.inv(Hg)} and hg = {hg}")
      # H (which is T^-1) and h to file
     np.savetxt('params_gyroCal',np.hstack((Hg,hg)))
