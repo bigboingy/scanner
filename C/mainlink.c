@@ -374,10 +374,10 @@ int main(void)
     uint16 readTime; // To send over bt, to work out dt
     
     uint16 const MIN_LOOP_TIME = 10u; // How many ms should the loop go for minimum? With a byte delay of 200us, loop lasts ~8ms, setting to
-                                      // 10ms keeps sample rate more predictable, works for hc06
-    // Hc05 seems to need 20ms (Not even 18 works!), and then acts predictably and can handle byte delay of 100us (but checksum fails occasionally)
+                                      // 10ms keeps sample rate more predictable, works for hc06.
+                                        // hc05 needs a delay time to start up upon connecting to computer, which was confusing
     
-    uint8 const UART_BYTE_DELAY = 200u; // UART send delay in us, baud is 115200, about 70us is one byte.
+    uint8 const UART_BYTE_DELAY = 100u; // UART send delay in us, baud is 115200, about 70us is one byte.
                                        // Setting to 60 causes data loss at i2c transfer
                                         // Experimentally, hc05 needs 200us delay between bytes minimum for constant sending. 
                                         // hc06 can handle 100us

@@ -6,7 +6,7 @@ from functools import partial
 import bt
 
 # Open port
-port = bt.getPortHandle(port="/dev/cu.HC-05")
+port = bt.getPortHandle(port="COM8")
 
 # Graphing setup
 plt.style.use('fivethirtyeight')

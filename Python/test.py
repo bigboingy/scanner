@@ -3,7 +3,7 @@ import time
 
 unprocessedBytes = bytearray() # Store bytes from incomplete packets
 port = bt.getPortHandle(port="COM8")
-time.sleep(2)
+
 
 bt.write(port,False,True,18)
 while 1:

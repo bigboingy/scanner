@@ -1,6 +1,7 @@
 # Imports constants
 import constants as cnst
 import serial
+import time
 
 # Function to convert single integer (base 10) into two's complement integer
 # In: val, length: how many bytes are being converted
@@ -12,9 +13,12 @@ def twos(val: int, length: int) -> int:
 
 # Function to open port, returning port handle
 def getPortHandle(port = "/dev/cu.HC-05", baud = 115200, timeout = 5):
-    return serial.Serial(
-        port=port, baudrate=baud, bytesize=8, timeout=timeout, stopbits=serial.STOPBITS_ONE
-    )
+    handle = serial.Serial(
+        port=port, baudrate=baud, bytesize=8, timeout=timeout, stopbits=serial.STOPBITS_ONE)
+
+    time.sleep(2) # Give time for hc-05 to be ready!!!
+
+    return handle
 
 # Function for formatting and sending bt requests
 # Count is how many reads to add to count before output stops
