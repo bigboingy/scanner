@@ -80,7 +80,7 @@ def magAlign(A,M,delta0=-69,tol=0.001):
         M = np.array(M)
 
     # 1. Initialise delta and R
-    delta = delta0*math.pi/180 # Convert to radians
+    delta = math.radians(delta0) # Convert to radians
     R = np.eye(3,3) # Rotation matrix
     N = np.shape(A)[1] # How many readings
 
@@ -158,7 +158,7 @@ def magAlign(A,M,delta0=-69,tol=0.001):
 # Returns:
 # G, calibrated gyro data
 # Tg and hg, gyro calibration parameters
-def gyroCalibrate(Y,A,M,freq,wStill,tol=0.001):
+def gyroCalibrate(Y,A,M,freq,wStill,tol=0.01):
     # Convert elements of Y to np array if they aren't already
     if not isinstance(Y[0],np.ndarray):
         for i in range(len(Y)):
@@ -172,6 +172,11 @@ def gyroCalibrate(Y,A,M,freq,wStill,tol=0.001):
     if not isinstance(wStill,np.ndarray):
         wStill = np.reshape(np.array(wStill),(3,1)) # Make into column vector
 
+    # Y has to be in radians. Convert all elements
+    for rot in Y: # Rotation
+        for iy, ix in np.ndindex(rot.shape):
+            rot[iy, ix] = math.radians(rot[iy, ix])
+
     # How many rotations?
     N = len(Y)
 
@@ -183,8 +188,8 @@ def gyroCalibrate(Y,A,M,freq,wStill,tol=0.001):
     alpha = 0.1
     beta = 0.5
     lmbda = 1 # Applied to 2nd summand when finding J
+    tau = 1/freq # Seconds per read
     epsilon = np.finfo(np.float64).eps # Machine epsilon
-
 
     # Function to get Ram for a single rotation
     # Inputs are 3x1 column vectors
@@ -227,7 +232,7 @@ def gyroCalibrate(Y,A,M,freq,wStill,tol=0.001):
         for k in range(K): # For each read (column)
             wk = w_tilde[:,k] # This read, as a row vector
             omega = np.array([ [0,-wk[2],wk[1]], [wk[2],0,-wk[0]], [-wk[1],wk[0],0] ]) # Make omega
-            Rg = Rg @ (np.eye(3,3) + freq*omega)
+            Rg = Rg @ (np.eye(3,3) + tau*omega)
 
         return Rg
 
@@ -259,7 +264,7 @@ def gyroCalibrate(Y,A,M,freq,wStill,tol=0.001):
     J = None # Initialise J
     while 1:
         # 3. Calculate the gradient of J numerically: f' = [ f(x+h) - f(x-h) ]/ 2h, for each element of x
-        gradJ = np.empty((12,1)) # Preallocate 9x1 vector
+        gradJ = np.empty((12,1)) # Preallocate 12x1 vector
 
         # Make x [vec(Hg).T hg.T].T 
         x = np.vstack( ( np.reshape(H.flatten(order='F'),(9,1)) , np.reshape(h.flatten(order='F'),(3,1)) ))
@@ -267,12 +272,13 @@ def gyroCalibrate(Y,A,M,freq,wStill,tol=0.001):
         # Work out how J changes when changing each variable in x
         MIN_X = 0.01 # How close to zero can x be to use the optimised h formula?
         for i in range(len(x)):
+            h = np.zeros((12,1))
             if abs(x[i]) < MIN_X:
-                h = 0.001 # Default to this if preferred formula can't be used
+                h[i,0] = 0.001 # Default to this if preferred formula can't be used
             else:
-                h = epsilon**(1/3)*x[i] # Optimal stepsize
+                h[i,0] = epsilon**(1/3)*x[i][0] # Optimal stepsize
             # Calculate gradient
-            gradJ[i] = (getJ(x+h) - getJ(x-h))/(2*h)
+            gradJ[i][0] = (getJ(x+h) - getJ(x-h))/(2*h[i,0])
         # We move opposite to gradient (steepest descent)    
         deltaX = -gradJ
 
