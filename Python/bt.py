@@ -56,6 +56,7 @@ def read(port, bytesArray:bytearray) -> dict:
     
     # 2. Loop through bytes to find double frame headers
     skips = 0 # How many bytes can we skip past? (they have been read)
+    toDelete = 0 # How many bytes have we processed and can now delete?
     for i in range(numBytes):
 
         # Skip this index if byte already processed
@@ -100,6 +101,7 @@ def read(port, bytesArray:bytearray) -> dict:
                 result['lidar'].append(newLidar)
                 # Skip next 8 values
                 skips = cnst.LIDAR_LENGTH-1
+                toDelete += cnst.LIDAR_LENGTH
                 continue
             else: # Not enough bytes
                 break 
@@ -144,16 +146,17 @@ def read(port, bytesArray:bytearray) -> dict:
                 result['imu'].append(newImu)
                 # Skip packet indices
                 skips = cnst.IMU_LENGTH-1
+                toDelete += cnst.IMU_LENGTH
                 continue
             else:
                 break # Not enough bytes
     
         # If we come to a value that's not a frame header, go to next index (doesn't tend to happen)
         # This could be the first bytes that come in, or if there's a random byte between packets
+        toDelete += 1 # Delete this byte
         continue
 
     # 3. Trim bytes that we have looked at, and return result
-    del bytesArray[0:i]
-    if len(bytesArray) > cnst.IMU_LENGTH:
-        ...
+    del bytesArray[0:toDelete]
+
     return result

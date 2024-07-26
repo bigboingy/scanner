@@ -374,15 +374,20 @@ int main(void)
     uint16 readTime; // To send over bt, to work out dt
     
     uint16 const MIN_LOOP_TIME = 10u; // How many ms should the loop go for minimum? With a byte delay of 200us, loop lasts ~8ms, setting to
-                                      // 10ms keeps sample rate more predictable
+                                      // 10ms keeps sample rate more predictable, works for hc06
+    // Hc05 seems to need 20ms (Not even 18 works!), and then acts predictably and can handle byte delay of 100us (but checksum fails occasionally)
+    
+    uint8 const UART_BYTE_DELAY = 200u; // UART send delay in us, baud is 115200, about 70us is one byte.
+                                       // Setting to 60 causes data loss at i2c transfer
+                                        // Experimentally, hc05 needs 200us delay between bytes minimum for constant sending. 
+                                        // hc06 can handle 100us
+    
     uint16 startTime; // What counter value are we up to at start of loop?
     uint16 endTime;
     uint16 loopInterval;
     uint16 const MAX_COUNTER = 0xFFFF; // Max value a uint16 can take, used to find interval if clock cycle restarts
     
-    uint8 const UART_BYTE_DELAY = 100u; // UART send delay in us, baud is 115200, 70us is about one byte.
-                                       // Setting to 60 causes data loss at i2c transfer
-                                        // Experimentally, hc05 needs 200us delay between bytes minimum. hc06 can handle less (100ms)
+    
     uint8 temp; // To store bt data
     
     
@@ -500,10 +505,9 @@ int main(void)
             CyDelayUs(UART_BYTE_DELAY);
         }
         
-        
         // 5. Read number control part 2
-        // Subtract from count if it's larger than 0
-        if( count > 0u) count -= 1;
+        // Subtract from count if it's larger than 0, and something is on
+        if( count > 0u && (mode & (LIDAR_ON|IMU_ON)) ) count -= 1;
             
         
         // 6. Timeout control
