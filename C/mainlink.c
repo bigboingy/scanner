@@ -11,11 +11,11 @@ tracked in git as mainlink.c
 // Note that banks are stored in the form they are sent: 0,1,2,3 shifted up 4 bits
 uint8 currentBank; // Set initially by imu_init call. Only changed by sel_imu_bank
 
-// btRequest functions
-#define LIDAR_REQ       1<<0
-#define IMU_REQ         1<<1
-#define CONT_MODE       1<<2 // If this bit is set, keep sending data until timeout
-#define COUNT_SHIFT     3 // How many bits forward do you have to shift to get the count?
+// mode functions
+#define LIDAR_ON       1<<0
+#define IMU_ON         1<<1
+#define CONT_MODE       1<<2 // If this bit is set, keep sending data even when count=0
+#define COUNT_SHIFT     3    // How many bits forward do you have to shift mode to get the count?
 
 // FUNCTIONS
 // Function to select user bank for icm20948
@@ -366,7 +366,8 @@ int main(void)
     uint8 imuChecksum; // Sent as last byte
     uint8 const IMU_HEADER = 0x58; // Header value for imu data
     
-    uint8 btRequest = 0u; // Controlls what data is sent, and how many reads
+    uint8 mode = 0u; // Controlls what data is sent, and if we have unlimited reads
+    uint8 count = 0u; // Track how many reads have been requested
     uint16 toutInitTime = toutTimerStart(); // For timeout timer
     uint16 const BT_TIMEOUT = 150u; // How many ms will we wait for bt update before shutting off output?
     
@@ -379,9 +380,12 @@ int main(void)
     uint16 loopInterval;
     uint16 const MAX_COUNTER = 0xFFFF; // Max value a uint16 can take, used to find interval if clock cycle restarts
     
-    uint8 const UART_BYTE_DELAY = 200u; // UART send delay in us, baud is 115200, 70us is about one byte.
+    uint8 const UART_BYTE_DELAY = 100u; // UART send delay in us, baud is 115200, 70us is about one byte.
                                        // Setting to 60 causes data loss at i2c transfer
-                                        // Experimentally, hc05 needs 200us delay between bytes minimum. hc06 can handle less.
+                                        // Experimentally, hc05 needs 200us delay between bytes minimum. hc06 can handle less (100ms)
+    uint8 temp; // To store bt data
+    
+    
     for(;;)
     {
         // Set start time
@@ -397,14 +401,23 @@ int main(void)
             // Continue if no errors
             if(errorStatus == 0u)
             {
-                btRequest = BTUART_ReadRxData();
+                temp = BTUART_ReadRxData();
+                mode =  temp & 0x07; // Mask off higher 5 bits - only store continuous read on/off and lidar/imu on/off
+                count +=  temp >> COUNT_SHIFT; // Add higher 5 bits to count
                 toutInitTime = toutTimerStart(); // Reset timer and get initial time of bt request
             }
         }
+        
+        // 2. Read number control
+        // If count==0 and cont_mode isn't on, turn off output
+        if( count==0 && !(mode & CONT_MODE) )
+        {
+            mode = 0u;
+        }
 
-        // 2. Loop over lidar data and send as received, but only if btRequest is set. Blocking until lidar data is sent
+        // 3. Loop over lidar data and send as received, but only if mode is set. Blocking until lidar data is sent
         i = 0; // Reset i
-        while( i<9 && (btRequest & LIDAR_REQ) )
+        while( i<9 && (mode & LIDAR_ON) )
         {
             // Check status of lidar Rx
             status = LIDARUART_ReadRxStatus();
@@ -449,8 +462,8 @@ int main(void)
             }
         }
 
-        // 3. Get imu data with i2c call, if requested, and send over bt
-        if( btRequest & IMU_REQ )
+        // 4. Get imu data with i2c call, if requested, and send over bt
+        if( mode & IMU_ON )
         {
             // Read accel, gyro and external sensor (mag) registers
             imu_read(ACCEL_XOUT_H, (uint8*)imuBuffer, 22);
@@ -488,29 +501,21 @@ int main(void)
         }
         
         
-        // 4. Read number control
-        // Bypassed if CONT_MODE is on
-        if( !(btRequest & CONT_MODE) )
-        {
-            // Subtract one from btRequest's high 5 bits. Lower 3 bits are isolated using a mask
-            btRequest = ( ((btRequest>>COUNT_SHIFT) - 1)<<COUNT_SHIFT) | (btRequest & ( (1<<COUNT_SHIFT)-1) );
-            // If zero counts remaining, set btRequest to 0
-            if( btRequest>>COUNT_SHIFT == 0u )
-            {
-                btRequest = 0u;
-            }
-        }
+        // 5. Read number control part 2
+        // Subtract from count if it's larger than 0
+        if( count > 0u) count -= 1;
+            
         
-        // 5. Timeout control
+        // 6. Timeout control
         if( toutTimerGetTime(toutInitTime) > BT_TIMEOUT ) // Stop bt if no response within timeout
         {
             // Timer counts down from 63 seconds and then resets to 63 again
             // So if timerStart() isn't called in this time, timerGetTime will be incorrect (too small)
             // This shouldn't cause any problems
-            btRequest = 0u;
+            mode = 0u;
         }
         
-        // 6. Loop timing control
+        // 7. Loop timing control
         // How long did the loop take?
         endTime = LoopTimer_ReadCounter();
         if( endTime < startTime )
