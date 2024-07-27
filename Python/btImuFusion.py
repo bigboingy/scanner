@@ -47,7 +47,7 @@ vis.add_geometry(axis)
 
 # Imu fusion setup
 ahrs = imufusion.Ahrs()
-sample_rate = 100 # Hz. On average 100 Hz when I set minlooptime to 10ms
+sample_rate = cnst.SAMPLE_RATE # Hz. On average 100 Hz when I set minlooptime to 10ms
 ahrs.settings = imufusion.Settings(imufusion.CONVENTION_ENU,  # convention - east north up
                                    0.5,  # gain
                                    1000,  # gyroscope range
@@ -78,7 +78,7 @@ while running:
         
         bt.write(port,lidarOn=False,imuOn=True,count=-1) # Respond so that timeout doesn't occur
         # Calibrate
-        data_cal = calibration.applyCalibration(data,gyroCal=True)
+        data_cal = calibration.applyCalibration(data,gyroCal=False,accCal=True)
         # Fusion
         # Takes gyro (1 by 3 matrix), acc (1 by 3 matrix), mag (1 by 3 matrix) and dt
         for reading in data_cal:

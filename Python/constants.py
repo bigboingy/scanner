@@ -1,8 +1,8 @@
 # DataTimer frequency (Hz)
 DATATIMER_FREQ = 100*1000 # One counter is a 100th of a ms
 
-# Sample rate (Hz)
-SAMPLE_RATE = 50
+# Sample rate (Hz) (approx)
+SAMPLE_RATE = 100
 
 # How many bytes are the packets? (including header and checksum)
 LIDAR_LENGTH = 9

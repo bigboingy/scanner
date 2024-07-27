@@ -22,8 +22,8 @@ def getPortHandle(port = "/dev/cu.HC-05", baud = 115200, timeout = 5):
 
 # Function for formatting and sending bt requests
 # Count is how many reads to add to count before output stops
-# Count defaults to -1 which is unlimited reads (sets cont_mode), max is 31 (5 bit)
-def write(port,lidarOn:bool,imuOn:bool,count:int=-1):
+# Count defaults to 0 which doesn't set any new reads, but refreshes timeout
+def write(port,lidarOn:bool,imuOn:bool,count:int=0):
 
     # Continuous read if count is -1
     if count == -1:
