@@ -68,7 +68,7 @@ def dataGen(port,unprocessedBytes):
         bt.write(port,lidarOn=False,imuOn=True,count=-1) # Respond to avoid timeout
 
         # Calibration
-        calibrated_data = calibration.applyCalibration(data,accCal=True,gyroCal=False)
+        calibrated_data = calibration.applyCalibration(data,accCal=False,gyroCal=False)
         yield calibrated_data # Pass data (imu tuple) to graphUpdate
 
 # Start the graphing animation

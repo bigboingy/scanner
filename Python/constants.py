@@ -13,8 +13,8 @@ LIDAR_HEADER = 0x59
 IMU_HEADER = 0x58
 
 # Values sent over bt to request data
-LIDAR_REQ   = 1 << 0
-IMU_REQ     = 1 << 1
+LIDAR_ON   = 1 << 0
+IMU_ON     = 1 << 1
 CONT_MODE   = 1 << 2
 COUNT_SHIFT = lambda x: x<<3
 
@@ -45,6 +45,10 @@ from collections import namedtuple
 Lidar = namedtuple('Lidar', 'dist str temp')
 Cartesian = namedtuple('Cartesian', 'x y z')
 Imu = namedtuple('Imu', 'acc gyro mag temp time')
+
+# Lidar imu fusion constants, using open3d
+LIDAR_DIREC = [1,0,0] # Unit vector of lidar direction in IMU frame of reference
+IMU_TO_O3D = [[0,0,1],[1,0,0],[0,1,0]] # Change of coordinate systems
 
 # from dataclasses import dataclass
 # @dataclass

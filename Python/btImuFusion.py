@@ -4,6 +4,9 @@ import imufusion
 import numpy as np
 import open3d as o3d
 import calibration
+import faulthandler
+
+faulthandler.enable()
 
 # Open port
 # timeout waits for return of requested no. bytes specified in read() function, and also in port opening
@@ -12,6 +15,7 @@ port = bt.getPortHandle(port="/dev/cu.HC-05")
 # Open3d visualisation
 vis = o3d.visualization.Visualizer()
 vis.create_window(height=480*5, width=640*5)
+
 # Make a cube
 points = [
         [-8, -4, -2],
@@ -78,7 +82,7 @@ while running:
         
         bt.write(port,lidarOn=False,imuOn=True,count=-1) # Respond so that timeout doesn't occur
         # Calibrate
-        data_cal = calibration.applyCalibration(data,gyroCal=False,accCal=True)
+        data_cal = calibration.applyCalibration(data,gyroCal=False,accCal=True,magAlign=True)
         # Fusion
         # Takes gyro (1 by 3 matrix), acc (1 by 3 matrix), mag (1 by 3 matrix) and dt
         for reading in data_cal:
