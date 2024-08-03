@@ -128,7 +128,7 @@ def read(port, bytesArray:bytearray) -> dict:
 
                 # Make an imu tuple
                 newImu = cnst.Imu(
-                    # Acc x,y,z. (big endian) Negatives added experimentally
+                    # Acc x,y,z. (big endian) Negatives added experimentally to make right handed coord sys
                     cnst.Cartesian(twos((packet[2]<<8) | packet[3],2)/cnst.ACC_SCALE_FAC*-1,
                             twos((packet[4]<<8) | packet[5],2)/cnst.ACC_SCALE_FAC*-1,
                             twos((packet[6]<<8) | packet[7],2)/cnst.ACC_SCALE_FAC*-1),

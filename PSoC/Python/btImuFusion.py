@@ -4,9 +4,6 @@ import imufusion
 import numpy as np
 import open3d as o3d
 import calibration
-import faulthandler
-
-faulthandler.enable()
 
 # Open port
 # timeout waits for return of requested no. bytes specified in read() function, and also in port opening
@@ -17,16 +14,27 @@ vis = o3d.visualization.Visualizer()
 vis.create_window(height=480*5, width=640*5)
 
 # Make a cube
+# points = [
+#         [-4, -2, -8],
+#         [4, -2, -8],
+#         [-4, 2, -8],
+#         [4, 2, -8],
+#         [-4, -2, 8],
+#         [4, -2, 8],
+#         [-4, 2, 8],
+#         [4, 2, 8],
+# ]
 points = [
-        [-8, -4, -2],
-        [8, -4, -2],
-        [-8, 4, -2],
-        [8, 4, -2],
-        [-8, -4, 2],
-        [8, -4, 2],
-        [-8, 4, 2],
-        [8, 4, 2],
+        [-.8, -.4, -.2],
+        [.8, -.4, -.2],
+        [-.8, .4, -.2],
+        [.8, .4, -.2],
+        [-.8, -.4, .2],
+        [.8, -.4, .2],
+        [-.8, .4, .2],
+        [.8, .4, .2],
 ]
+
 lines = [
         [0, 1],
         [0, 2],
@@ -46,13 +54,16 @@ line_set = o3d.geometry.LineSet(
     lines=o3d.utility.Vector2iVector(lines),)
 vis.add_geometry(line_set)
 # Add coord axis
-axis = o3d.geometry.TriangleMesh.create_coordinate_frame()
+axis = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1)
 vis.add_geometry(axis)
+
+axis1 = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1)
+vis.add_geometry(axis1)
 
 # Imu fusion setup
 ahrs = imufusion.Ahrs()
 sample_rate = cnst.SAMPLE_RATE # Hz. On average 100 Hz when I set minlooptime to 10ms
-ahrs.settings = imufusion.Settings(imufusion.CONVENTION_ENU,  # convention - east north up
+ahrs.settings = imufusion.Settings(imufusion.CONVENTION_NED,  # convention - north east down, matches roll/pitch/yaw of imu coord sys
                                    0.5,  # gain
                                    1000,  # gyroscope range
                                    10,  # acceleration rejection
@@ -70,6 +81,7 @@ bt.write(port,lidarOn=False,imuOn=True,count=-1)
 # Loop
 running = True
 prevCounter = 0xFFFF/cnst.DATATIMER_FREQ # Initialisation. You need to put in dt between fusion updates!
+prevRot = np.array([[1,0,0],[0,1,0],[0,0,1]])
 while running:
     # These run all the time
     running = vis.poll_events() # Returns false on window close
@@ -97,6 +109,8 @@ while running:
             ahrs.update(np.array(reading.gyro), np.array(reading.acc), np.array(reading.mag), dt) # Transpose M to make row vector again
             prevCounter = reading.time
 
+            print(ahrs.quaternion.to_euler())
+
             # Check status flags and internal states
             flags = ahrs.flags
             if flags.initialising: print('Initialising')
@@ -111,8 +125,16 @@ while running:
             print('x')
             
         # Update geometry
+        R = ahrs.quaternion.to_matrix()
         line_set.points = o3d.utility.Vector3dVector(points) # Reset points
-        line_set.rotate(ahrs.quaternion.to_matrix()) # Apply rotation
+        line_set.translate(cnst.RADIUS*(R@cnst.IMU_DIREC),relative=False)
+        line_set.rotate(R) # Apply rotation
+
+        axis1.rotate(np.linalg.inv(prevRot))
+        axis1.rotate(R)
+        prevRot = R
+
         vis.update_geometry(line_set)
+        vis.update_geometry(axis1)
 
 vis.destroy_window()

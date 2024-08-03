@@ -110,7 +110,7 @@ if __name__ == "__main__":
     # At certain reads, track IMU moving between two points instead.
     # Gyrocope still reading is taken in first read (must be still)
     
-    NO_READS = 19 # How many datapoints
+    NO_READS = 12 # How many datapoints
     STAT_AV = 20 # How many reads are taken at stationary datapoints, to be averaged
     ROT_TIME = 2 # How many seconds does rotation go for?
     moving_reads = []#[12,15,18] # Which reads are moving?

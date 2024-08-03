@@ -1,3 +1,5 @@
+import numpy as np
+
 # DataTimer frequency (Hz)
 DATATIMER_FREQ = 100*1000 # One counter is a 100th of a ms
 
@@ -47,8 +49,11 @@ Cartesian = namedtuple('Cartesian', 'x y z')
 Imu = namedtuple('Imu', 'acc gyro mag temp time')
 
 # Lidar imu fusion constants, using open3d
-LIDAR_DIREC = [1,0,0] # Unit vector of lidar direction in IMU frame of reference
-IMU_TO_O3D = [[0,0,1],[1,0,0],[0,1,0]] # Change of coordinate systems
+IMU_DIREC = [1,0,0] # Unit vector of IMU direction that's facing outwards from centre of rotation (imu frame)
+LIDAR_DIREC = [1,0,0] # Unit vector of lidar direction (imu frame)
+RADIUS = 0.3 # How many m is the rotation radius to the lidar?
+IMU_VEC_TO_O3D = lambda x: (np.array([[0,1,0],[0,0,1],[1,0,0]]) @ x).T # Change coordinate system and transpose (o3d uses row vecs)
+IMU_MAT_TO_O3D = lambda x: (x @ np.array([[0,0,1],[1,0,0],[0,1,0]])) # Shift columns
 
 # from dataclasses import dataclass
 # @dataclass

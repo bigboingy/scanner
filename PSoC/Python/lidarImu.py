@@ -4,37 +4,27 @@ import imufusion
 import numpy as np
 import open3d as o3d
 import calibration
-
-
-def o3d_loop(vis,pcd,cube):
-
-
-
-    return
-
-
+import fusion
 
 # Open port
-# timeout waits for return of requested no. bytes specified in read() function, and also in port opening
 port = bt.getPortHandle(port="/dev/cu.HC-05")
 
 # Open3d visualisation
 vis = o3d.visualization.Visualizer()
 vis.create_window(height=480*5, width=640*5)
-# Make a cube
+# Make a cube. Dimensions are in imu frame
+r = cnst.RADIUS
 cubePoints = [
-        [-8, -4, -2],
-        [8, -4, -2],
-        [-8, 4, -2],
-        [8, 4, -2],
-        [-8, -4, 2],
-        [8, -4, 2],
-        [-8, 4, 2],
-        [8, 4, 2],
+    [-2*r, -r, -r/2],
+    [2*r, -r, -r/2],
+    [-2*r, r, -r/2],
+    [2*r, r, -r/2],
+    [-2*r, -r, r/2],
+    [2*r, -r, r/2],
+    [-2*r, r, r/2],
+    [2*r, r, r/2],
 ]
-# for pt in cubePoints:
-#     for coord in pt:
-#         coord = coord/10
+
 cubeLines = [
         [0, 1],
         [0, 2],
@@ -55,30 +45,28 @@ cube = o3d.geometry.LineSet(
 vis.add_geometry(cube)
 # Initialise pointcloud
 pcd = o3d.geometry.PointCloud()
-pcd.points = o3d.utility.Vector3dVector(np.zeros((1,3))) # Put a pt at 000
+pcd.points = o3d.utility.Vector3dVector(np.array([[-6,-6,-6],[6,6,6]]))
 vis.add_geometry(pcd)
 # Add coord axis
-axis = o3d.geometry.TriangleMesh.create_coordinate_frame()
+axis = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1)
 vis.add_geometry(axis)
 cam = vis.get_view_control() # For camera control. This call can result in segmentation error if too early??
+
 # Imu fusion setup
 ahrs = imufusion.Ahrs()
 sample_rate = cnst.SAMPLE_RATE # Hz. On average 100 Hz when I set minlooptime to 10ms
-ahrs.settings = imufusion.Settings(imufusion.CONVENTION_ENU,  # convention - east north up
+ahrs.settings = imufusion.Settings(imufusion.CONVENTION_NED,  # convention - north east down
                                    0.5,  # gain
                                    1000,  # gyroscope range
                                    10,  # acceleration rejection
                                    10,  # magnetic rejection, max difference bw algorithm and magnetometer before mag is ignored
                                    5 * sample_rate)  # recovery trigger period = 5 seconds
 
-# Rejecting acc, mag is still rejected sometimes --> mag is unaligned with gyro
-# Rejecting mag, acc is not rejected --> acc agrees with gyro
-# Mag is unaligned with gyro/acc --> allign
-
 # Store bytes from incomplete packets, for bt.read
 unprocessedBytes = bytearray()
 # Make initial request for data
 bt.write(port,lidarOn=True,imuOn=True,count=-1)
+
 # Loop
 running = True
 prevCounter = 0xFFFF/cnst.DATATIMER_FREQ # Initialisation. You need to put in dt between fusion updates!
@@ -92,12 +80,11 @@ while running:
         'imu':[] # Imu tuples
     }
 
-    # Read serial buffer and append
+    # Read serial buffer and append to data
     newData = bt.read(port, unprocessedBytes)
     if newData['lidar']: data['lidar'].extend(newData['lidar'])
     if newData['imu']: data['imu'].extend(newData['imu'])
 
-    
     # If 1+ lidar and imu have come through...
     if data['lidar'] and data['imu']:
 
@@ -112,51 +99,32 @@ while running:
         # Calibrate imu
         imu_cal = calibration.applyCalibration(imus,gyroCal=False,accCal=True)
         # Fusion for each imu
-        # Takes gyro (1 by 3 matrix), acc (1 by 3 matrix), mag (1 by 3 matrix) and dt
-        R = [] # Store rotation matrices
-        for imu in imu_cal:
-            # Turn clock counter into a time difference
-            if prevCounter > imu.time:
-                dt = prevCounter-imu.time
-            else:
-                dt = prevCounter+(0xFFFF/cnst.DATATIMER_FREQ-imu.time) # 0xFFFF is the max counter (what clock resets to after reaching 0)
-            
-            # Update sensor fusion
-            ahrs.update(np.array(imu.gyro), np.array(imu.acc), np.array(imu.mag), dt) # Transpose M to make row vector again
-            prevCounter = imu.time
-
-            # Check status flags and internal states
-            flags = ahrs.flags
-            if flags.initialising: print('Initialising')
-            if flags.angular_rate_recovery: print('Angular rate recovery')
-            if flags.acceleration_recovery: print('Acceleration recovery')
-            if flags.magnetic_recovery: print('Magnetic recovery')
-            states = ahrs.internal_states
-            if states.accelerometer_ignored:
-                print('Accelerometer ignored, error: %.1f' % states.acceleration_error)
-            if states.magnetometer_ignored:
-                print('Magnetometer ignored, error: %.1f' % states.magnetic_error)
-            print('x')
-            # Save rotation matrix
-            R.append(ahrs.quaternion.to_matrix())
+        
+        ahrs,R,prevCounter = fusion.imuFusion(ahrs,imu_cal,prevCounter)
 
         # Apply rotations to lidars
-        newPoints = np.empty((3,pairs)) # 3xN matrix
+        newPoints = np.empty((3,pairs)) # 
         for i,lidar in enumerate(lidars):
-            lidarVec = lidar.dist*np.array(cnst.LIDAR_DIREC).reshape((3,1)) # Get column vector
-            newPoints[:,[i]] = cnst.IMU_TO_O3D @ np.linalg.inv(R[i]) @ lidarVec # Apply rotation and add to array
+            # In Earth frame...
+            centre_to_lidar = r * R[i] @ np.array(cnst.IMU_DIREC).reshape((3,1)) 
+            lidar_to_point = lidar.dist * R[i] @ np.array(cnst.LIDAR_DIREC).reshape((3,1)) 
+            position = centre_to_lidar + lidar_to_point
+
+            # lidarVec = ( lidar.dist*np.array(cnst.LIDAR_DIREC) + cnst.RADIUS*np.array(cnst.LIDAR_DIREC) ).reshape((3,1)) # Get column vector
+            newPoints[:,[i]] = position # Apply rotation and add to array
         
         # Update geometry
         pcd.points.extend(newPoints.T) # Need to take transpose as o3d stores as Nx3 matrix
         cube.points = o3d.utility.Vector3dVector(cubePoints) # Reset points
-        cube.rotate(cnst.IMU_TO_O3D @ R[-1]) # Apply last rotation to box
+        cube.translate(centre_to_lidar,relative=False)
+        cube.rotate(R[-1]) # Apply last rotation to box
         vis.update_geometry(cube)
         vis.update_geometry(pcd)
 
         # Move camera
         # cam_params = cam.convert_to_pinhole_camera_parameters()
         # camMatrix = np.copy(cam_params.extrinsic)
-        # camMatrix[0:3,0:3] = constRot @ R[-1].T
+        # camMatrix[0:3,0:3] = np.array([[1,0,0],[0,0,-1],[0,1,0]]) @ np.array([[1,0,0],[0,0,-1],[0,1,0]]) @ R[-1]
         # cam_params.extrinsic = camMatrix
         # cam.convert_from_pinhole_camera_parameters(cam_params,True)
     
