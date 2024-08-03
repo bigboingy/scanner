@@ -8,4 +8,6 @@ Scanner Python.code-workspace
 sample*
 param*
 
-*temp
+temp*
+
+.vscode
