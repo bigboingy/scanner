@@ -10,4 +10,5 @@ param*
 
 temp*
 
-.vscode
+
+PSoC/Python/.vscode/launch.json
