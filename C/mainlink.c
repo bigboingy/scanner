@@ -358,7 +358,7 @@ int main(void)
     // Main loop
     uint8 status;
     uint8 errorStatus;
-    uint8 lidarBuffer; // Sent over bt after it is received
+    uint8 lidarBuffer[9]; // Collected before imu read and sent after
     uint8 i=0u; // Tracks lidar data collection position
     
     uint8 imuBuffer[22];
@@ -369,7 +369,7 @@ int main(void)
     uint8 mode = 0u; // Controlls what data is sent, and if we have unlimited reads
     uint8 count = 0u; // Track how many reads have been requested
     uint16 toutInitTime = toutTimerStart(); // For timeout timer
-    uint16 const BT_TIMEOUT = 150u; // How many ms will we wait for bt update before shutting off output?
+    uint16 const BT_TIMEOUT = 300u; // How many ms will we wait for bt update before shutting off output?
     
     uint16 readTime; // To send over bt, to work out dt
     
@@ -377,7 +377,7 @@ int main(void)
                                       // 10ms keeps sample rate more predictable, works for hc06.
                                         // hc05 needs a delay time to start up upon connecting to computer, which was confusing
     
-    uint8 const UART_BYTE_DELAY = 100u; // UART send delay in us, baud is 115200, about 70us is one byte.
+    uint8 const UART_BYTE_DELAY = 200u; // UART send delay in us, baud is 115200, about 70us is one byte.
                                        // Setting to 60 causes data loss at i2c transfer
                                         // Experimentally, hc05 needs 200us delay between bytes minimum for constant sending. 
                                         // hc06 can handle 100us
@@ -388,7 +388,7 @@ int main(void)
     uint16 const MAX_COUNTER = 0xFFFF; // Max value a uint16 can take, used to find interval if clock cycle restarts
     
     
-    uint8 temp; // To store bt data
+    uint8 temp; // To store bt data and lidar data on aquisition
     
     
     for(;;)
@@ -420,7 +420,7 @@ int main(void)
             mode = 0u;
         }
 
-        // 3. Loop over lidar data and send as received, but only if mode is set. Blocking until lidar data is sent
+        // 3. Loop over lidar data and store in buffer. Blocking until data is recieved
         i = 0; // Reset i
         while( i<9 && (mode & LIDAR_ON) )
         {
@@ -435,39 +435,30 @@ int main(void)
                 if(errorStatus == 0u)
                 {
                     // Read data
-                    lidarBuffer = LIDARUART_ReadRxData();
+                    temp = LIDARUART_ReadRxData();
                     // If 0<i<2 then we should have the frame header. Only want to send it if get both in succession
                     if( i==0u || i==1u )
                     {
-                        if( lidarBuffer != 0x59 )
+                        if( temp != 0x59 )
                         {
                             i = 0u; // If no frame header, reset counter and try again
                             continue;
                         }
-                        else if(i == 1u)
+                        else
                         {
-                            BTUART_WriteTxData(lidarBuffer); // Send 0x59
-                            CyDelayUs(UART_BYTE_DELAY);
-                            BTUART_WriteTxData(lidarBuffer); // Send 0x59
-                            CyDelayUs(UART_BYTE_DELAY);
-                            i++;
-                            continue;
-                        }
-                        else if( i == 0u )
-                        {
+                            lidarBuffer[i] = temp; // Store in buffer
                             i++;
                             continue;
                         }
                     }
                     // Trailing values 2<=i<=8 (incl checksum)
-                    BTUART_WriteTxData(lidarBuffer); // Send byte
+                    lidarBuffer[i] = temp; // Store in buffer
                     i++;
-                    CyDelayUs(UART_BYTE_DELAY); // Delay between bytes doesn't need to be as long as a byte as time taken in receiving data too?
                 }   
             }
         }
 
-        // 4. Get imu data with i2c call, if requested, and send over bt
+        // 4. Get imu data with i2c call, if requested, and store in buffer
         if( mode & IMU_ON )
         {
             // Read accel, gyro and external sensor (mag) registers
@@ -475,6 +466,21 @@ int main(void)
             
             // Grab time now
             readTime = DataTimer_ReadCounter();
+        }
+        
+        // 5. Send lidar and IMU data
+        // Lidar
+        if( mode & LIDAR_ON )
+        {
+            for( uint8 j=0u; j<9u; j++)
+            {
+                BTUART_WriteTxData(lidarBuffer[j]);
+                CyDelayUs(UART_BYTE_DELAY);
+            }
+        }
+        // IMU
+        if( mode & IMU_ON )
+        {
             
             // Send header
             BTUART_WriteTxData(IMU_HEADER);
@@ -484,7 +490,7 @@ int main(void)
             
             imuSum = 2*IMU_HEADER; // Have sent two headers so far
             // Send each byte
-            for( uint8 j = 0; j<22u; j++ )
+            for( uint8 j = 0u; j<22u; j++ )
             {
                 if( j==20 )continue; // Don't send the mag dummy register (reads 0 only)
                 imuSum+=imuBuffer[j];
