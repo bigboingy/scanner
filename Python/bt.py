@@ -16,14 +16,14 @@ def getPortHandle(port = "/dev/cu.HC-05", baud = 115200, timeout = 5):
     handle = serial.Serial(
         port=port, baudrate=baud, bytesize=8, timeout=timeout, stopbits=serial.STOPBITS_ONE)
 
-    time.sleep(2) # Give time for hc-05 to be ready!!!
+    time.sleep(3) # Give time for hc-05 to be ready!!!
 
     return handle
 
 # Function for formatting and sending bt requests
 # Count is how many reads to add to count before output stops
-# Count defaults to -1 which is unlimited reads (sets cont_mode), max is 31 (5 bit)
-def write(port,lidarOn:bool,imuOn:bool,count:int=-1):
+# Count defaults to 0 which doesn't set any new reads, but refreshes timeout
+def write(port,lidarOn:bool,imuOn:bool,count:int=0):
 
     # Continuous read if count is -1
     if count == -1:
@@ -34,8 +34,8 @@ def write(port,lidarOn:bool,imuOn:bool,count:int=-1):
     # Make request byte
     request = bytes([   cnst.COUNT_SHIFT(count) |
                         cont*cnst.CONT_MODE |
-                        imuOn*cnst.IMU_REQ |
-                        lidarOn*cnst.LIDAR_REQ ]) # Need to enclose in list to specify byte
+                        imuOn*cnst.IMU_ON |
+                        lidarOn*cnst.LIDAR_ON ]) # Need to enclose in list to specify byte
     # Send request
     port.write(request)
 
@@ -88,12 +88,11 @@ def read(port, bytesArray:bytearray) -> dict:
                 # Check checksum
                 checksum = sum(packet[:-1])&0xFF
                 if checksum != packet[-1]:
-                    print('Checksum Failed!')
-                    skips = cnst.IMU_LENGTH-1 # Skip past this packet
-                    continue
+                    print('Lidar Checksum Failed!')
+                    continue # Try next bit
                 # Make a lidar dataclass
                 newLidar = cnst.Lidar(
-                packet[2] + (packet[3]<<8), # Dist
+                (packet[2] + (packet[3]<<8))/1000, # Dist, converted to m
                 packet[4] + (packet[5]<<8), # Str
                 (packet[6] + (packet[7]<<8))/8-256 # Temp
                 )
@@ -119,7 +118,7 @@ def read(port, bytesArray:bytearray) -> dict:
                 # Check checksum
                 checksum = sum(packet[:-1])&0xFF
                 if checksum != packet[-1]:
-                    print('Checksum Failed!')
+                    print('IMU checksum Failed!')
                     continue # Try next bit
 
                 # Check magnetometer status 2 register for magnetic sensor overflow
@@ -129,7 +128,7 @@ def read(port, bytesArray:bytearray) -> dict:
 
                 # Make an imu tuple
                 newImu = cnst.Imu(
-                    # Acc x,y,z. (big endian) Negatives added experimentally
+                    # Acc x,y,z. (big endian) Negatives added experimentally to make right handed coord sys
                     cnst.Cartesian(twos((packet[2]<<8) | packet[3],2)/cnst.ACC_SCALE_FAC*-1,
                             twos((packet[4]<<8) | packet[5],2)/cnst.ACC_SCALE_FAC*-1,
                             twos((packet[6]<<8) | packet[7],2)/cnst.ACC_SCALE_FAC*-1),

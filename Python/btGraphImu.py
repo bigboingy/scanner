@@ -6,7 +6,7 @@ from functools import partial
 import bt
 
 # Open port
-port = bt.getPortHandle(port="COM8")
+port = bt.getPortHandle(port="/dev/tty.HC-05")
 
 # Graphing setup
 plt.style.use('fivethirtyeight')
@@ -49,11 +49,6 @@ def graphUpdate(btData):
             ax.relim()
             ax.autoscale()
 
-        # Debug
-        for read in btData:
-            #print(f'mag norm:{np.linalg.norm(read.mag,ord=2)}')
-            #print(f'acc norm:{np.linalg.norm(read.acc,ord=2)}')
-            print(read.time*1000)
 
 
 
@@ -73,7 +68,7 @@ def dataGen(port,unprocessedBytes):
         bt.write(port,lidarOn=False,imuOn=True,count=-1) # Respond to avoid timeout
 
         # Calibration
-        calibrated_data = calibration.applyCalibration(data,accCal=True,gyroCal=True)
+        calibrated_data = calibration.applyCalibration(data,accCal=False,gyroCal=False)
         yield calibrated_data # Pass data (imu tuple) to graphUpdate
 
 # Start the graphing animation

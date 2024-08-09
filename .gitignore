@@ -7,3 +7,8 @@ Scanner Python.code-workspace
 # Sample data and calib parameters
 sample*
 param*
+
+temp*
+
+
+Python/.vscode/launch.json

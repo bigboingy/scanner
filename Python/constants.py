@@ -1,8 +1,10 @@
+import numpy as np
+
 # DataTimer frequency (Hz)
 DATATIMER_FREQ = 100*1000 # One counter is a 100th of a ms
 
-# Sample rate (Hz)
-SAMPLE_RATE = 50
+# Sample rate (Hz) (approx)
+SAMPLE_RATE = 100
 
 # How many bytes are the packets? (including header and checksum)
 LIDAR_LENGTH = 9
@@ -13,8 +15,8 @@ LIDAR_HEADER = 0x59
 IMU_HEADER = 0x58
 
 # Values sent over bt to request data
-LIDAR_REQ   = 1 << 0
-IMU_REQ     = 1 << 1
+LIDAR_ON   = 1 << 0
+IMU_ON     = 1 << 1
 CONT_MODE   = 1 << 2
 COUNT_SHIFT = lambda x: x<<3
 
@@ -45,6 +47,13 @@ from collections import namedtuple
 Lidar = namedtuple('Lidar', 'dist str temp')
 Cartesian = namedtuple('Cartesian', 'x y z')
 Imu = namedtuple('Imu', 'acc gyro mag temp time')
+
+# Lidar imu fusion constants, using open3d
+IMU_DIREC = [1,0,0] # Unit vector of IMU direction that's facing outwards from centre of rotation (imu frame)
+LIDAR_DIREC = [1,0,0] # Unit vector of lidar direction (imu frame)
+RADIUS = 0.3 # How many m is the rotation radius to the lidar?
+IMU_VEC_TO_O3D = lambda x: (np.array([[0,1,0],[0,0,1],[1,0,0]]) @ x).T # Change coordinate system and transpose (o3d uses row vecs)
+IMU_MAT_TO_O3D = lambda x: (x @ np.array([[0,0,1],[1,0,0],[0,1,0]])) # Shift columns
 
 # from dataclasses import dataclass
 # @dataclass

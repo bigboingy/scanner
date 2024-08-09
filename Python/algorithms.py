@@ -154,11 +154,12 @@ def magAlign(A,M,delta0=-69,tol=0.001):
 # wStill is a 3x1 matrix containg gyro vector when IMU is stationary (averaged)
 # Freq is the sample rate (Hz)
 # tol is the stopping criteria (max % difference between iterations to consider converged)
+# degrees is if data is provided in degrees or not
 #
 # Returns:
 # G, calibrated gyro data
 # Tg and hg, gyro calibration parameters
-def gyroCalibrate(Y,A,M,freq,wStill,tol=0.01):
+def gyroCalibrate(Y,A,M,freq,wStill,tol=0.01,degrees:bool=True):
     # Convert elements of Y to np array if they aren't already
     if not isinstance(Y[0],np.ndarray):
         for i in range(len(Y)):
@@ -173,9 +174,13 @@ def gyroCalibrate(Y,A,M,freq,wStill,tol=0.01):
         wStill = np.reshape(np.array(wStill),(3,1)) # Make into column vector
 
     # Y has to be in radians. Convert all elements
-    for rot in Y: # Rotation
-        for iy, ix in np.ndindex(rot.shape):
-            rot[iy, ix] = math.radians(rot[iy, ix])
+    if degrees:
+        for rot in Y: # Rotation
+            for iy, ix in np.ndindex(rot.shape):
+                rot[iy, ix] = math.radians(rot[iy, ix])
+        # So does wStill
+        for i,_ in enumerate(wStill):
+            wStill[i] = math.radians(wStill[i])
 
     # How many rotations?
     N = len(Y)
@@ -232,7 +237,7 @@ def gyroCalibrate(Y,A,M,freq,wStill,tol=0.01):
         for k in range(K): # For each read (column)
             wk = w_tilde[:,k] # This read, as a row vector
             omega = np.array([ [0,-wk[2],wk[1]], [wk[2],0,-wk[0]], [-wk[1],wk[0],0] ]) # Make omega
-            Rg = Rg @ (np.eye(3,3) + tau*omega)
+            Rg = Rg @ (np.eye(3,3) - tau*omega) # This is + in paper, but references and experimentation suggest the -
 
         return Rg
 
@@ -270,15 +275,15 @@ def gyroCalibrate(Y,A,M,freq,wStill,tol=0.01):
         x = np.vstack( ( np.reshape(H.flatten(order='F'),(9,1)) , np.reshape(h.flatten(order='F'),(3,1)) ))
 
         # Work out how J changes when changing each variable in x
-        MIN_X = 0.01 # How close to zero can x be to use the optimised h formula?
+        MIN_X = 0.01 # How close to zero can x be to use the optimised stepsize formula?
         for i in range(len(x)):
-            h = np.zeros((12,1))
+            step = np.zeros((12,1))
             if abs(x[i]) < MIN_X:
-                h[i,0] = 0.001 # Default to this if preferred formula can't be used
+                step[i,0] = 0.001 # Default to this if preferred formula can't be used
             else:
-                h[i,0] = epsilon**(1/3)*x[i][0] # Optimal stepsize
+                step[i,0] = epsilon**(1/3)*x[i][0] # Optimal stepsize
             # Calculate gradient
-            gradJ[i][0] = (getJ(x+h) - getJ(x-h))/(2*h[i,0])
+            gradJ[i][0] = (getJ(x+step) - getJ(x-step))/(2*step[i,0])
         # We move opposite to gradient (steepest descent)    
         deltaX = -gradJ
 
@@ -296,8 +301,8 @@ def gyroCalibrate(Y,A,M,freq,wStill,tol=0.01):
         Jnew = getJ(xNew)
         print(Jnew)
 
-        # Is this J small enough?
-        if J and abs(J-Jnew)/J < tol/100:
+        # Is this J small enough? Add in an acceptable val of 0.01 or less as conv doesn't seem to be as strong
+        if J and (abs(J-Jnew)/J < tol/100 or Jnew < 0.01):
             return H,h # Retrun calibration parameters
         # If not, update J
         J = Jnew
