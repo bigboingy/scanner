@@ -7,25 +7,32 @@
 #include "esp_log.h"
 #include "driver/i2c_master.h"
 #include "hal/uart_ll.h"
+#include "icm20948_funcs.h"
+#include "icm20948_regs.h"
 
 // Pin numbers
 // USB
 #define USB_TX 1
 #define USB_RX 3
 
-// Lidar
+// Lidar UART
 #define LIDAR_TX 23
 #define LIDAR_RX 18 // SCK label
 #define LIDAR_DATA_FREQ 100
-static QueueHandle_t uart2_queue;
+#define UART_PORT_NO 2 // Port 0 is used for USB by default
+#define BAUD 115200 // Used for lidar and USB
+#define LIDAR_BUF_SIZE 1024 // DOES IT NEED TO BE THIS BIG?
+static QueueHandle_t uart2_queue; // Queue handle for interrupt
 
 // IMU
 #define SCL 25 // D2. 4 Will be used in final PCB, but will ruin debugging now!
-#define SCK 26 // D3. 12 Will be used in final PCB
+#define SDA 26 // D3. 12 Will be used in final PCB
+#define IMU_BUF_SIZE 22
+uint8_t imuBank; // Track current imu bank
+uint8_t const ACC_SCALE = 1;
+uint8_t const GYRO_SCALE = 2;
+uint16_t const OFFS_VALS = 100u;
 
-#define UART_PORT_NO 2 // Port 0 is used for USB by default
-#define BAUD 115200 // Used for lidar and USB
-#define LIDAR_BUF_SIZE 1024
 
 // LED
 #define LED 2
@@ -58,24 +65,41 @@ void app_main() {
     ESP_ERROR_CHECK(uart_intr_config(UART_PORT_NO, &uart_intr));
     ESP_ERROR_CHECK(uart_enable_rx_intr(UART_PORT_NO));
 
-    // // I2C setup
-    // i2c_master_bus_config_t i2c_mst_config = {
-    // .clk_source = I2C_CLK_SRC_DEFAULT,
-    // .i2c_port = I2C_NUM_0,
-    // .scl_io_num = SCL,
-    // .sda_io_num = SCK,
-    // .glitch_ignore_cnt = 7,
-    // .flags.enable_internal_pullup = true,
-    // };
-    // i2c_master_bus_handle_t bus_handle;
-    // ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_mst_config, &bus_handle));
-    // i2c_device_config_t dev_cfg = {
-    //     .dev_addr_length = I2C_ADDR_BIT_LEN_7,
-    //     .device_address = 0x58,
-    //     .scl_speed_hz = 100000,
-    // };
-    // i2c_master_dev_handle_t dev_handle;
-    // ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_handle, &dev_cfg, &dev_handle));
+    // I2C setup
+    i2c_master_bus_config_t i2c_mst_config = {
+    .clk_source = I2C_CLK_SRC_DEFAULT,
+    .i2c_port = I2C_NUM_0,
+    .scl_io_num = SCL,
+    .sda_io_num = SDA,
+    .glitch_ignore_cnt = 7,
+    .flags.enable_internal_pullup = true,
+    };
+    i2c_master_bus_handle_t bus_handle;
+    ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_mst_config, &bus_handle));
+    i2c_device_config_t dev_cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = 0x69,
+        .scl_speed_hz = 100000,
+    };
+    i2c_master_dev_handle_t imu_handle;
+    ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_handle, &dev_cfg, &imu_handle));
+
+    // Test send i2c data. Transmit_recieve for read and transmit for write
+    // uint8_t writeBuffer1[1] = {0x06};
+    // uint8_t writeBuffer2[2] = {0x06,0x01};
+    // uint8_t readBuffer[10];
+    // ESP_ERROR_CHECK(i2c_master_transmit_receive(imu_handle,writeBuffer1,1,readBuffer,1,-1));
+    // ESP_ERROR_CHECK(i2c_master_transmit(imu_handle,writeBuffer2,sizeof(writeBuffer2),-1));
+    // vTaskDelay(10);
+    // ESP_ERROR_CHECK(i2c_master_transmit_receive(imu_handle,writeBuffer1,sizeof(writeBuffer1),readBuffer,1,-1));
+    // writeBuffer1[0] = 0x2D;
+    // ESP_ERROR_CHECK(i2c_master_transmit_receive(imu_handle,writeBuffer1,sizeof(writeBuffer1),readBuffer,5,-1));
+
+    uint8_t imuBuffer[IMU_BUF_SIZE];
+    imuBank = imu_init(imu_handle, imuBank, ACC_SCALE, GYRO_SCALE, OFFS_VALS);
+    // Read accel, gyro and external sensor (mag) registers
+    imuBank = imu_read(imu_handle, imuBank, ACCEL_XOUT_H, imuBuffer, 22);
+
 
     // LED
     gpio_set_direction(LED,GPIO_MODE_OUTPUT); // Setup GPIO
