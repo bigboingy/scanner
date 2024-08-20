@@ -58,8 +58,6 @@ void app_main() {
     ESP_ERROR_CHECK(uart_intr_config(UART_PORT_NO, &uart_intr));
     ESP_ERROR_CHECK(uart_enable_rx_intr(UART_PORT_NO));
 
-
-
     // // I2C setup
     // i2c_master_bus_config_t i2c_mst_config = {
     // .clk_source = I2C_CLK_SRC_DEFAULT,
@@ -83,10 +81,8 @@ void app_main() {
     gpio_set_direction(LED,GPIO_MODE_OUTPUT); // Setup GPIO
     
     // Tasks
-    xTaskCreate(ledBlink_task, "ledBlink", configMINIMAL_STACK_SIZE, NULL, 3, NULL);
-
+    xTaskCreate(ledBlink_task, "ledBlink", 2048, NULL, 3, NULL);
     xTaskCreate(uartRead_task, "uartRead", 2048, NULL, 10, NULL);
-
 }
 
 // Task to blink the LED
@@ -97,6 +93,13 @@ static void ledBlink_task(void *pvParameters)
         // Turn on LED
         led_state = !led_state;
         gpio_set_level(LED,led_state);
+
+        // Task info testing
+        TaskHandle_t xHandle = xTaskGetHandle( "Task_Name" );
+        TaskStatus_t xTaskDetails;
+        vTaskGetInfo(xHandle,&xTaskDetails,pdTRUE,eInvalid);
+        printf("LED mode switched!\n");
+        printf("Time in LED task has been %.4f seconds!\n",(float)xTaskDetails.ulRunTimeCounter/1000);
         vTaskDelay(500/portTICK_PERIOD_MS);
     }
 }
@@ -119,6 +122,11 @@ static void uartRead_task(void *pvParameters)
             printf("Found %d bytes! ",event.size);
             uart_read_bytes(UART_PORT_NO, lidarBuffer, event.size ,portMAX_DELAY);
             printf("Distance = %d mm\n",lidarBuffer[3]<<8 | lidarBuffer[2]);
+        }
+        else
+        {
+            printf("Warning, event other than data triggered: %d",event.type);
+
         }
     }
 }
