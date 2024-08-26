@@ -29,7 +29,7 @@ static const char *TAG = "MAIN";
 #define LIDAR_DATA_FREQ 100
 #define UART_PORT_NO 2 // Port 0 is used for USB by default
 #define BAUD 115200 // Used for lidar and USB
-#define LIDAR_BUF_SIZE 1024 // DOES IT NEED TO BE THIS BIG?
+#define LIDAR_BUF_SIZE 256 // 129 is minimum (UART_HW_FIFO_LEN + 1), but not really :(
 #define LIDAR_PACKET_SIZE 9
 
 // IMU
@@ -75,7 +75,7 @@ void app_main() {
     ESP_ERROR_CHECK(uart_param_config(UART_PORT_NO, &uart_config));
     ESP_ERROR_CHECK(uart_set_pin(UART_PORT_NO,LIDAR_TX,LIDAR_RX,UART_PIN_NO_CHANGE,UART_PIN_NO_CHANGE));
     int intr_alloc_flags = 0;
-    ESP_ERROR_CHECK(uart_driver_install(UART_PORT_NO,LIDAR_BUF_SIZE,LIDAR_BUF_SIZE,LIDAR_BUF_SIZE,&uart2_queue,intr_alloc_flags));
+    ESP_ERROR_CHECK(uart_driver_install(UART_PORT_NO,LIDAR_BUF_SIZE,LIDAR_BUF_SIZE,10,&uart2_queue,intr_alloc_flags));
     uart_intr_config_t uart_intr = { // Setup interrupts
     .intr_enable_mask = UART_INTR_RXFIFO_FULL | UART_INTR_RXFIFO_TOUT,
     .rxfifo_full_thresh = 100, // fifo buffer is 128 bytes (this doesn't trigger anyway)
@@ -128,6 +128,8 @@ void app_main() {
 // Task to blink the LED
 static void ledBlink_task(void *pvParameters)
 {
+    TaskHandle_t xHandle = xTaskGetHandle( "Task_Name" );
+    TaskStatus_t xTaskDetails;
     for(;;)
     {
         // Turn on LED
@@ -135,8 +137,6 @@ static void ledBlink_task(void *pvParameters)
         gpio_set_level(LED,led_state);
 
         // Task info testing
-        TaskHandle_t xHandle = xTaskGetHandle( "Task_Name" );
-        TaskStatus_t xTaskDetails;
         vTaskGetInfo(xHandle,&xTaskDetails,pdTRUE,eInvalid);
         ESP_LOGI(TAG,"LED mode switched!\n");
         ESP_LOGI(TAG,"Time in LED task has been %.4f seconds!\n",(float)xTaskDetails.ulRunTimeCounter/1000);
@@ -159,10 +159,17 @@ static void lidarRead_task(void *pvParameters)
         
         switch (event.type) {
             case UART_DATA:
-                // Event interrupt validation
+                // Event validation
                 if (event.size != LIDAR_PACKET_SIZE) {
+                    uart_read_bytes(UART_PORT_NO, lidarBuffer, event.size ,portMAX_DELAY);
                     ESP_LOGW(TAG,"Expected packet size not received: %d",event.size);
-                    uart_flush(UART_PORT_NO); break; // Flush data and wait for next event
+                    for( uint8_t i = 0; i<event.size; i++ )
+                    {
+                        ESP_LOGW(TAG,"Byte %d: %d",i,lidarBuffer[i]);
+                    }
+                    uart_flush(UART_PORT_NO); // Flush data from ring buffer
+                    xQueueReset(uart2_queue); // Reset queue (or out of frame reading occurs?)
+                    break; // Wait for next event
                 }
                 if (!event.timeout_flag) {ESP_LOGW(TAG,"Lidar data not sent by timeout as expected...");}
 
@@ -172,11 +179,25 @@ static void lidarRead_task(void *pvParameters)
                 uart_get_buffered_data_len(UART_PORT_NO,&len); // Ring buffer length
                 if(len>LIDAR_PACKET_SIZE) ESP_LOGW(TAG,"There are %d bytes in the ring buffer",len);
 
-                // Read bytes while packets remain in the ring buffer
+                // Read all packets in the ring buffer
                 while (len)
                 {
                     uart_read_bytes(UART_PORT_NO, lidarBuffer, LIDAR_PACKET_SIZE ,portMAX_DELAY);
+
+                    // Validate checksum
+                    uint16_t checksum=0;
+                    for(uint8_t i=0; i<LIDAR_PACKET_SIZE-1; i++)
+                    {
+                        checksum += lidarBuffer[i];
+                    }
+                    if ((checksum & 0xFF) != lidarBuffer[LIDAR_PACKET_SIZE-1])
+                    {
+                        ESP_LOGW(TAG,"Checksum failed!");
+                        break;
+                    }
+
                     if(imuTaskHandle != NULL) xTaskNotifyGive(imuTaskHandle); // Unblock imu task if it exists yet
+
                     ESP_LOGI(TAG,"Distance = %d mm",lidarBuffer[3]<<8 | lidarBuffer[2]);
                     len -= LIDAR_PACKET_SIZE; // Recalculate buffer length
                 }
