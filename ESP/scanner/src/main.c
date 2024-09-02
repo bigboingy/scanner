@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <inttypes.h>
 #include "sdkconfig.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -156,8 +157,16 @@ static struct gatts_profile_inst gatts_profile_tab[PROFILE_NUM] = {
     // },
 };
 
-// Tasks
+// Struct for lidar data
+struct lidarData {
+    uint16_t dist; // Distance
+    uint16_t str; // Strength
+    uint16_t temp; // Temperature
+};
+
+// Tasks and queues
 static QueueHandle_t uart2_queue; // Queue handle for interrupt, which adds an item to the queue on data received
+static QueueHandle_t ble_queue; // Queue for adding bluetooth data
 static TaskHandle_t imuTaskHandle = NULL; // Task handle for imu task
 
 void app_main() {
@@ -233,7 +242,6 @@ void app_main() {
     // ret = esp_ble_gatts_app_register(LIDAR_IMU_APP_ID);
     // if (ret){ ESP_LOGE(TAG, "gatts app register error, error code = %x", ret); return;}
 
-
     // Initialise icm20948
     imuBank = imu_init(imu_device_handle, imuBank, ACC_SCALE, GYRO_SCALE, OFFS_VALS);
 
@@ -241,7 +249,7 @@ void app_main() {
     gpio_set_direction(LED,GPIO_MODE_OUTPUT); // Setup GPIO
     
     // Tasks
-    //xTaskCreate(lidarRead_task, "uartRead", 2048, NULL, 10, NULL);
+    xTaskCreate(lidarRead_task, "uartRead", 4096, NULL, 10, NULL); // Stack overflow using 2048
     //xTaskCreate(imuRead_task,"imuRead",2048,imu_device_handle,7,&imuTaskHandle);
     xTaskCreate(ledBlink_task, "ledBlink", 2048, NULL, 3, NULL);
 }
@@ -320,8 +328,22 @@ static void lidarRead_task(void *pvParameters)
 
                     if(imuTaskHandle != NULL) xTaskNotifyGive(imuTaskHandle); // Unblock imu task if it exists yet
 
-                    ESP_LOGI(TAG,"Distance = %d mm",lidarBuffer[3]<<8 | lidarBuffer[2]); // Print distance (debugging)
-                    
+                    //ESP_LOGI(TAG,"Distance = %d mm",lidarBuffer[3]<<8 | lidarBuffer[2]); // Print distance (debugging)
+
+                    // Add lidar data to ble_queue
+                    // Prepare structre
+                    struct lidarData *dataPointer = malloc(sizeof(struct lidarData)); // Makes space for the struct
+                    dataPointer->dist = lidarBuffer[3]<<8 | lidarBuffer[2];
+                    dataPointer->str = lidarBuffer[5]<<8 | lidarBuffer[4];
+                    dataPointer->temp = lidarBuffer[7]<<8 | lidarBuffer[6];
+                    // Add pointer to queue. Don't block if queue is full
+                    if(xQueueSendToBack(ble_queue,(void *) &dataPointer,(TickType_t) 0) == pdPASS){
+                        //ESP_LOGI(TAG,"The distance %d was added to the ble queue",dataPointer->dist);
+                    } else {
+                        ESP_LOGW(TAG,"ble_queue full! Clearing contents.");
+                        xQueueReset(ble_queue);
+                    }
+                    // free(dataPointer); // Don't free the memory yet. The pointer was queued by copy, not by reference
                 }
                 break;
             
@@ -417,6 +439,14 @@ static void gatts_lidar_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t 
         // Example sets flags here too...
         // Create services
         esp_ble_gatts_create_service(gatts_if,&gatts_profile_tab[LIDAR_APP_ID].service_id,GATTS_HANDLE_NO); // lidar service
+
+        // Initialise the ble queue, 10 long is frequently full, 20 long is rarely full, 30 is safe (using 15-40ms ble interval)
+        ble_queue = xQueueCreate(30, sizeof(struct lidarData *));
+        if( ble_queue == NULL ){ 
+            ESP_LOGE(TAG,"Ble queue creation failed");
+        } else {
+            ESP_LOGI(TAG,"Ble queue created");
+        }
         break;
 
     case ESP_GATTS_CREATE_EVT: // When service created (by previous case)
@@ -476,7 +506,7 @@ static void gatts_lidar_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t 
         esp_ble_conn_update_params_t conn_params = {0};
         memcpy(conn_params.bda, param->connect.remote_bda, sizeof(esp_bd_addr_t)); // Copy over bt device address
         conn_params.latency = 0;
-        conn_params.max_int = 0x30; // max_int = 0x30*1.25ms = 40ms
+        conn_params.max_int = 0x30; // max_int = 0x30*1.25ms = 40ms (We could have 15ms and use a smaller ble queue)
         conn_params.min_int = 0x0C; // min_int = 0x0C*1.25ms = 15ms (Apple recommended)
         conn_params.timeout = 600; // timeout = 600*10ms = 6000ms (Apple says 6-18 s)
         esp_ble_gap_update_conn_params(&conn_params); // Process update
@@ -494,6 +524,44 @@ static void gatts_lidar_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t 
         esp_ble_gap_start_advertising(&adv_params); // Start advertising again?
         break;
 
+    case ESP_GATTS_READ_EVT: // On read request
+        ESP_LOGI(TAG,"GATT_READ_EVT, conn_id %d, trans id %"PRIu32", handle %d",
+                param->read.conn_id, param->read.trans_id, param->read.handle);
+
+        esp_gatt_rsp_t rsp; // Response struct
+        memset(&rsp,0,sizeof(esp_gatt_rsp_t)); // Initialise rsp to 0
+        rsp.attr_value.handle = param -> read.handle;
+
+        // Testing sending lidar distance from a queue
+        // Get everything from the queue and add to rsp
+        uint8_t numMsg = (uint8_t)uxQueueMessagesWaiting(ble_queue); // Number of items in queue
+        while( !numMsg ) { // If nothing in the queue
+            vTaskDelay(10/portTICK_PERIOD_MS); // Wait for 10 ms
+            numMsg = (uint8_t)uxQueueMessagesWaiting(ble_queue);
+        }
+        // This will point to the lidar struct when the queue is read
+        struct lidarData *data; // The memory for the struct has already been allocated
+        rsp.attr_value.len = 6 * numMsg; // Dist, str, temp
+        // For each queue message
+        for(uint8_t i=0; i<numMsg; i++)
+        {
+            // Direct *data pointer to the lidarData struct
+            if( xQueueReceive(ble_queue,&data,0) == pdTRUE ){ // &data is a pointer to a pointer
+            //ESP_LOGI(TAG,"The distance %d was read from the ble queue",data->dist);
+            rsp.attr_value.value[6*i+0] = data->dist & 0xFF; // Dist low
+            rsp.attr_value.value[6*i+1] = data->dist >> 8; // Dist high
+            rsp.attr_value.value[6*i+2] = data->str & 0xFF; // Str low
+            rsp.attr_value.value[6*i+3] = data->str >> 8; // Str high
+            rsp.attr_value.value[6*i+4] = data->temp & 0xFF; // Temp low
+            rsp.attr_value.value[6*i+5] = data->temp >> 8; // Temp high
+            }
+            else ESP_LOGW(TAG,"ble_queue receive failed");
+        }
+        // Send!
+        esp_ble_gatts_send_response(gatts_if,param->read.conn_id,param->read.trans_id,ESP_GATT_OK, &rsp);
+        ESP_LOGI(TAG,"Sent %d lidarData",numMsg);
+        free(data); // Now we can free the memory
+        break;
     default: break;
     }
 }
