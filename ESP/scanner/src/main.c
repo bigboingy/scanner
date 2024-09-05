@@ -71,6 +71,7 @@ static esp_attr_value_t lidar_char_val = { // Attribute is a generic term for an
 // Byte length of data to be
 #define BYTES_LIDAR 6
 #define BYTES_IMU  20
+#define BYTES_COMB BYTES_LIDAR+BYTES_IMU
 
 // Function declarations
 static void ledBlink_task(void *pvParameters);
@@ -418,16 +419,16 @@ static void imuRead_task(void *imu_device_handle)
         // Make imuData
         struct imuData *dataPointer = malloc(sizeof(struct imuData));
         struct cartesian acc,gyro,mag;
-        acc.x = imuBuffer[0]>>8 | imuBuffer[1];
-        acc.y = imuBuffer[2]>>8 | imuBuffer[3];
-        acc.z = imuBuffer[4]>>8 | imuBuffer[5];
-        gyro.x = imuBuffer[6]>>8 | imuBuffer[7];
-        gyro.y = imuBuffer[8]>>8 | imuBuffer[9];
-        gyro.z = imuBuffer[10]>>8 | imuBuffer[11]; 
-        dataPointer->temp = imuBuffer[12]>>8 | imuBuffer[13]; // 12 and 13 are temp
-        mag.x = imuBuffer[14] | imuBuffer[15]>>8;  // Low then high
-        mag.y = imuBuffer[16]<<8 | imuBuffer[17];
-        mag.z = imuBuffer[18]<<8 | imuBuffer[19]; // 20 is nothing, 21 is magnetic overflow (control 2)
+        acc.x = imuBuffer[0]<<8 | imuBuffer[1];
+        acc.y = imuBuffer[2]<<8 | imuBuffer[3];
+        acc.z = imuBuffer[4]<<8 | imuBuffer[5];
+        gyro.x = imuBuffer[6]<<8 | imuBuffer[7];
+        gyro.y = imuBuffer[8]<<8 | imuBuffer[9];
+        gyro.z = imuBuffer[10]<<8 | imuBuffer[11]; 
+        dataPointer->temp = imuBuffer[12]<<8 | imuBuffer[13]; // 12 and 13 are temp
+        mag.x = imuBuffer[14] | imuBuffer[15]<<8;  // Low then high
+        mag.y = imuBuffer[16] | imuBuffer[17]<<8;
+        mag.z = imuBuffer[18] | imuBuffer[19]<<8; // 20 is nothing, 21 is magnetic overflow (control 2)
         if(imuBuffer[21] & 0x08) ESP_LOGW(TAG,"Magnetic overflow occurred");
         dataPointer->acc = acc; dataPointer->gyro = gyro; dataPointer->mag = mag;
 
@@ -605,8 +606,8 @@ static void gatts_lidar_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t 
         uint8_t readsToSend = (numLidar<numImu) ? numLidar : numImu; // Get the minimum queue size
 
         // Make sure we aren't exceeding MTU limit
-        if( (BYTES_LIDAR + BYTES_IMU)*readsToSend > ESP_GATT_MAX_ATTR_LEN ) {
-            readsToSend = 19; // floor(ESP_GATT_MAX_ATTR_LEN / (BYTES_LIDAR+BYTES_IMU))
+        if( (BYTES_COMB)*readsToSend > ESP_GATT_MAX_ATTR_LEN ) {
+            readsToSend = 19; // floor(ESP_GATT_MAX_ATTR_LEN / (BYTES_COMB)
             ESP_LOGW(TAG,"More data available than can be sent in one ble transaction");
         }
 
@@ -621,38 +622,38 @@ static void gatts_lidar_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t 
             // Direct *data_lidar pointer to the lidarData struct
             if( xQueueReceive(ble_queue_lidar,&data_lidar,0) == pdTRUE ){ // &data_lidar is a pointer to a pointer
             //ESP_LOGI(TAG,"The distance %d was read from the ble queue",data->dist);
-            rsp.attr_value.value[(BYTES_LIDAR+BYTES_IMU)*i+0] = data_lidar->dist & 0xFF; // Dist low
-            rsp.attr_value.value[(BYTES_LIDAR+BYTES_IMU)*i+1] = data_lidar->dist >> 8; // Dist high
-            rsp.attr_value.value[(BYTES_LIDAR+BYTES_IMU)*i+2] = data_lidar->str & 0xFF; // Str low
-            rsp.attr_value.value[(BYTES_LIDAR+BYTES_IMU)*i+3] = data_lidar->str >> 8; // Str high
-            rsp.attr_value.value[(BYTES_LIDAR+BYTES_IMU)*i+4] = data_lidar->temp & 0xFF; // Temp low
-            rsp.attr_value.value[(BYTES_LIDAR+BYTES_IMU)*i+5] = data_lidar->temp >> 8; // Temp high
+            rsp.attr_value.value[(BYTES_COMB)*i+0] = data_lidar->dist & 0xFF; // Dist low
+            rsp.attr_value.value[(BYTES_COMB)*i+1] = data_lidar->dist >> 8; // Dist high
+            rsp.attr_value.value[(BYTES_COMB)*i+2] = data_lidar->str & 0xFF; // Str low
+            rsp.attr_value.value[(BYTES_COMB)*i+3] = data_lidar->str >> 8; // Str high
+            rsp.attr_value.value[(BYTES_COMB)*i+4] = data_lidar->temp & 0xFF; // Temp low
+            rsp.attr_value.value[(BYTES_COMB)*i+5] = data_lidar->temp >> 8; // Temp high
             free(data_lidar); // Now we can free the memory
             }
             else ESP_LOGW(TAG,"ble_queue_lidar receive failed"); // Leave as zeros
 
             // Set data_imu pointer
             if( xQueueReceive(ble_queue_imu,&data_imu,0) == pdTRUE ){
-                rsp.attr_value.value[(BYTES_LIDAR+BYTES_IMU)*i+6] = data_imu->acc.x >> 8; // Acc x high
-                rsp.attr_value.value[(BYTES_LIDAR+BYTES_IMU)*i+7] = data_imu->acc.x & 0xFF; // Acc x low
-                rsp.attr_value.value[(BYTES_LIDAR+BYTES_IMU)*i+8] = data_imu->acc.y >> 8; // Acc y high
-                rsp.attr_value.value[(BYTES_LIDAR+BYTES_IMU)*i+9] = data_imu->acc.y & 0xFF; // Acc y low
-                rsp.attr_value.value[(BYTES_LIDAR+BYTES_IMU)*i+10] = data_imu->acc.z >> 8; // Acc z high
-                rsp.attr_value.value[(BYTES_LIDAR+BYTES_IMU)*i+11] = data_imu->acc.z & 0xFF; // Acc z low
-                rsp.attr_value.value[(BYTES_LIDAR+BYTES_IMU)*i+12] = data_imu->gyro.x >> 8; // Gyro x high
-                rsp.attr_value.value[(BYTES_LIDAR+BYTES_IMU)*i+13] = data_imu->gyro.x & 0xFF; // Gyro x low
-                rsp.attr_value.value[(BYTES_LIDAR+BYTES_IMU)*i+14] = data_imu->gyro.y >> 8; // Gyro y high
-                rsp.attr_value.value[(BYTES_LIDAR+BYTES_IMU)*i+15] = data_imu->gyro.y & 0xFF; // Gyro y low
-                rsp.attr_value.value[(BYTES_LIDAR+BYTES_IMU)*i+16] = data_imu->gyro.z >> 8; // Gyro z high
-                rsp.attr_value.value[(BYTES_LIDAR+BYTES_IMU)*i+17] = data_imu->gyro.z & 0xFF; // Gyro z low
-                rsp.attr_value.value[(BYTES_LIDAR+BYTES_IMU)*i+18] = data_imu->temp >> 8; // Temp high
-                rsp.attr_value.value[(BYTES_LIDAR+BYTES_IMU)*i+19] = data_imu->temp & 0xFF; // Temp low
-                rsp.attr_value.value[(BYTES_LIDAR+BYTES_IMU)*i+20] = data_imu->mag.x >> 8; // Mag x low
-                rsp.attr_value.value[(BYTES_LIDAR+BYTES_IMU)*i+21] = data_imu->mag.x & 0xFF; // Mag x high
-                rsp.attr_value.value[(BYTES_LIDAR+BYTES_IMU)*i+22] = data_imu->mag.y >> 8; // Mag y low
-                rsp.attr_value.value[(BYTES_LIDAR+BYTES_IMU)*i+23] = data_imu->mag.y & 0xFF; // Mag y high
-                rsp.attr_value.value[(BYTES_LIDAR+BYTES_IMU)*i+24] = data_imu->mag.x >> 8; // Mag z low
-                rsp.attr_value.value[(BYTES_LIDAR+BYTES_IMU)*i+25] = data_imu->mag.x & 0xFF; // Mag z high
+                rsp.attr_value.value[(BYTES_COMB)*i+6] = data_imu->acc.x >> 8; // Acc x high
+                rsp.attr_value.value[(BYTES_COMB)*i+7] = data_imu->acc.x & 0xFF; // Acc x low
+                rsp.attr_value.value[(BYTES_COMB)*i+8] = data_imu->acc.y >> 8; // Acc y high
+                rsp.attr_value.value[(BYTES_COMB)*i+9] = data_imu->acc.y & 0xFF; // Acc y low
+                rsp.attr_value.value[(BYTES_COMB)*i+10] = data_imu->acc.z >> 8; // Acc z high
+                rsp.attr_value.value[(BYTES_COMB)*i+11] = data_imu->acc.z & 0xFF; // Acc z low
+                rsp.attr_value.value[(BYTES_COMB)*i+12] = data_imu->gyro.x >> 8; // Gyro x high
+                rsp.attr_value.value[(BYTES_COMB)*i+13] = data_imu->gyro.x & 0xFF; // Gyro x low
+                rsp.attr_value.value[(BYTES_COMB)*i+14] = data_imu->gyro.y >> 8; // Gyro y high
+                rsp.attr_value.value[(BYTES_COMB)*i+15] = data_imu->gyro.y & 0xFF; // Gyro y low
+                rsp.attr_value.value[(BYTES_COMB)*i+16] = data_imu->gyro.z >> 8; // Gyro z high
+                rsp.attr_value.value[(BYTES_COMB)*i+17] = data_imu->gyro.z & 0xFF; // Gyro z low
+                rsp.attr_value.value[(BYTES_COMB)*i+18] = data_imu->temp >> 8; // Temp high
+                rsp.attr_value.value[(BYTES_COMB)*i+19] = data_imu->temp & 0xFF; // Temp low
+                rsp.attr_value.value[(BYTES_COMB)*i+20] = data_imu->mag.x >> 8; // Mag x low
+                rsp.attr_value.value[(BYTES_COMB)*i+21] = data_imu->mag.x & 0xFF; // Mag x high
+                rsp.attr_value.value[(BYTES_COMB)*i+22] = data_imu->mag.y >> 8; // Mag y low
+                rsp.attr_value.value[(BYTES_COMB)*i+23] = data_imu->mag.y & 0xFF; // Mag y high
+                rsp.attr_value.value[(BYTES_COMB)*i+24] = data_imu->mag.x >> 8; // Mag z low
+                rsp.attr_value.value[(BYTES_COMB)*i+25] = data_imu->mag.x & 0xFF; // Mag z high
                 free(data_imu); // Free the memory
             }
             else ESP_LOGW(TAG,"ble_queue_imu receive failed"); // Leave as zeros to send
