@@ -101,6 +101,7 @@ uint8_t static mag_read_setup(i2c_master_dev_handle_t imu_handle, uint8_t curren
 
     // Send read command
     // Last 4 bits are set to how many bytes to read, reading 8 bytes
+    // Magnetometer expects that the Control 2 register will be read
     currentBank = imu_write(imu_handle, currentBank, I2C_SLV0_CTRL, 0x80 | 8);
 
     vTaskDelay(20/portTICK_PERIOD_MS); // Delay
