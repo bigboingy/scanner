@@ -393,6 +393,8 @@ static void lidarRead_task(void *pvParameters)
             default: ESP_LOGW(TAG,"UART event: %d",event.type); break;
         }
     }
+    // Shouldn't reach this point
+    free(lidarBuffer);
 }
 
 // Task to read imu
@@ -648,12 +650,12 @@ static void gatts_lidar_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t 
                 rsp.attr_value.value[(BYTES_COMB)*i+17] = data_imu->gyro.z & 0xFF; // Gyro z low
                 rsp.attr_value.value[(BYTES_COMB)*i+18] = data_imu->temp >> 8; // Temp high
                 rsp.attr_value.value[(BYTES_COMB)*i+19] = data_imu->temp & 0xFF; // Temp low
-                rsp.attr_value.value[(BYTES_COMB)*i+20] = data_imu->mag.x >> 8; // Mag x low
-                rsp.attr_value.value[(BYTES_COMB)*i+21] = data_imu->mag.x & 0xFF; // Mag x high
-                rsp.attr_value.value[(BYTES_COMB)*i+22] = data_imu->mag.y >> 8; // Mag y low
-                rsp.attr_value.value[(BYTES_COMB)*i+23] = data_imu->mag.y & 0xFF; // Mag y high
-                rsp.attr_value.value[(BYTES_COMB)*i+24] = data_imu->mag.x >> 8; // Mag z low
-                rsp.attr_value.value[(BYTES_COMB)*i+25] = data_imu->mag.x & 0xFF; // Mag z high
+                rsp.attr_value.value[(BYTES_COMB)*i+20] = data_imu->mag.x & 0xFF; // Mag x low
+                rsp.attr_value.value[(BYTES_COMB)*i+21] = data_imu->mag.x >> 8; // Mag x high
+                rsp.attr_value.value[(BYTES_COMB)*i+22] = data_imu->mag.y & 0xFF; // Mag y low
+                rsp.attr_value.value[(BYTES_COMB)*i+23] = data_imu->mag.y >> 8; // Mag y high
+                rsp.attr_value.value[(BYTES_COMB)*i+24] = data_imu->mag.z & 0xFF; // Mag z low
+                rsp.attr_value.value[(BYTES_COMB)*i+25] = data_imu->mag.z >> 8; // Mag z high
                 free(data_imu); // Free the memory
             }
             else ESP_LOGW(TAG,"ble_queue_imu receive failed"); // Leave as zeros to send

@@ -1,12 +1,11 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from ble import run, read
-import asyncio
 
 async def graph():
 
     # Graph setup
-    MAX_READS = 50
+    MAX_READS = 100
     x_init = range(1,MAX_READS+1)
     y_init = np.linspace(-1,1,MAX_READS)
     # Define
@@ -60,7 +59,7 @@ async def graph():
         
 
         # Rescale graphs
-        ax1.relim(); ax2.relim(); ax3.relim
+        ax1.relim(); ax2.relim(); ax3.relim()
         ax1.autoscale(); ax2.autoscale(); ax3.autoscale()
 
         # For graph event loop

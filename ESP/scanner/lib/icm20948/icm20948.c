@@ -157,6 +157,7 @@ uint8_t imu_init(i2c_master_dev_handle_t imu_handle, uint8_t currentBank, uint8_
     currentBank = mag_read_setup(imu_handle,currentBank,8);
 
     // Setting offsets
+    
 
     return currentBank;
 
