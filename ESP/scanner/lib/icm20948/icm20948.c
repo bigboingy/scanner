@@ -2,9 +2,11 @@
 #include "icm20948_regs.h"
 #include "driver/i2c_master.h"
 #include <stdio.h>
-#include "freertos/FreeRTOS.h"
+#include "freertos/FreeRTOS.h" // Need for delays
+#include "esp_log.h"
 
-
+// Logging tag
+static const char *TAG = "IMU";
 
 // Function to select user bank for icm20948
 // bank is 0,1,2,or 3, left shifted 4 bits
@@ -115,6 +117,11 @@ uint8_t static mag_read_setup(i2c_master_dev_handle_t imu_handle, uint8_t curren
 // Returns current bank
 uint8_t imu_init(i2c_master_dev_handle_t imu_handle, uint8_t currentBank, uint8_t accScale, uint8_t gyroScale, uint16_t offsetNo)
 {
+
+    // What scale factors correspond to accScale and gyroScale settings?
+    float accScaleFacs[4] = {16384,8192,4096,2048}; float accScaleFac = accScaleFacs[accScale]; // LSB/g
+    float gyroScaleFacs[4] = {131,65.5,32.8,16.4}; float gyroScaleFac = gyroScaleFacs[gyroScale]; //LSB/dps
+
     // Reset bank to 0
     currentBank = imu_bank_sel(imu_handle,0<<4);
 
@@ -157,7 +164,50 @@ uint8_t imu_init(i2c_master_dev_handle_t imu_handle, uint8_t currentBank, uint8_
     currentBank = mag_read_setup(imu_handle,currentBank,8);
 
     // Setting offsets
-    
+    uint8_t temp[12]; // Will need to cast to signed types
+    int32_t accSum[3] = {0,0,0}; // x,y,z, signed!
+    int32_t gyroSum[3] = {0,0,0};
+    for( uint16_t i=0; i<offsetNo; i++){ // Take offsetNo reads
+        currentBank = imu_read(imu_handle, currentBank, ACCEL_XOUT_H,temp,12); // Read
+        accSum[0] += (int16_t)(temp[0] << 8 | temp[1]); // Add to summation. Needs to be int16 to capture -ve vals!
+        accSum[1] += (int16_t)(temp[2] << 8 | temp[3]);
+        accSum[2] += (int16_t)(temp[4] << 8 | temp[5]);
+        gyroSum[0] += (int16_t)(temp[6] << 8 | temp[7]);
+        gyroSum[1] += (int16_t)(temp[8] << 8 | temp[9]);
+        gyroSum[2] += (int16_t)(temp[10] << 8 | temp[11]);
+    }
+    // Acc, registers take a 15 bit value. Need to read seperately as regs aren't sequential!
+    currentBank = imu_read(imu_handle,currentBank,XA_OFFS_H,&temp[0],2); // Get current offsets (15bit), put into temp[0:6]
+    currentBank = imu_read(imu_handle,currentBank,YA_OFFS_H,&temp[2],2);
+    currentBank = imu_read(imu_handle,currentBank,ZA_OFFS_H,&temp[4],2);
+    // Averages must be converted into +/-16 G scale, (setting 3)
+    int16_t accAv[3] = {accSum[0]*(accScaleFacs[3]/accScaleFac)/offsetNo,
+                        accSum[1]*(accScaleFacs[3]/accScaleFac)/offsetNo,
+                        accSum[2]*(accScaleFacs[3]/accScaleFac)/offsetNo}; // Converted averages in 4096 lsb/G
+    int16_t accOffsets[3] = { // Work out the offsets
+        (temp[0] << 7 | temp[1] >> 1) - accAv[0], // Current - error
+        (temp[2] << 7 | temp[3] >> 1) - accAv[1], // xxxxxxxx xxxxxxxo --> oxxxxxxx xxxxxxxx
+        (temp[4] << 7 | temp[5] >> 1) - (accAv[2]-(1*accScaleFacs[3])) // Starting error for z is distance from 1
+    }; // oxxxxxxx xxxxxxx --> xxxxxxxx xxxxxxo
+    currentBank = imu_write(imu_handle,currentBank,XA_OFFS_H,(uint8_t)(accOffsets[0]>>7)); // Acc x high
+    currentBank = imu_write(imu_handle,currentBank,XA_OFFS_L,(uint8_t)(accOffsets[0]<<1)); // Acc x low
+    currentBank = imu_write(imu_handle,currentBank,YA_OFFS_H,(uint8_t)(accOffsets[1]>>7)); // Acc y high
+    currentBank = imu_write(imu_handle,currentBank,YA_OFFS_L,(uint8_t)(accOffsets[1]<<1)); // Acc y low
+    currentBank = imu_write(imu_handle,currentBank,ZA_OFFS_H,(uint8_t)(accOffsets[2]>>7)); // Acc z high
+    currentBank = imu_write(imu_handle,currentBank,ZA_OFFS_L,(uint8_t)(accOffsets[2]<<1)); // Acc z low
+
+    // Gyro
+    // Average must be converted into +/-1000 dps scale, (setting 2)
+    int16_t gyroAv[3] = {gyroSum[0]*(gyroScaleFacs[2]/gyroScaleFac)/offsetNo,
+                         gyroSum[1]*(gyroScaleFacs[2]/gyroScaleFac)/offsetNo,
+                         gyroSum[2]*(gyroScaleFacs[2]/gyroScaleFac)/offsetNo}; // Converted averages
+
+    currentBank = imu_write(imu_handle,currentBank,XG_OFFS_H,(uint8_t)(-gyroAv[0]>>8)); // Gyro x high
+    currentBank = imu_write(imu_handle,currentBank,XG_OFFS_L,(uint8_t)(-gyroAv[0]&0xFF)); // Gyro x low
+    currentBank = imu_write(imu_handle,currentBank,YG_OFFS_H,(uint8_t)(-gyroAv[1]>>8)); // Gyro y high
+    currentBank = imu_write(imu_handle,currentBank,YG_OFFS_L,(uint8_t)(-gyroAv[1]&0xFF)); // Gyro y low
+    currentBank = imu_write(imu_handle,currentBank,ZG_OFFS_H,(uint8_t)(-gyroAv[2]>>8)); // Gyro z high
+    currentBank = imu_write(imu_handle,currentBank,ZG_OFFS_L,(uint8_t)(-gyroAv[2]&0xFF)); // Gyro z low
 
     return currentBank;
 

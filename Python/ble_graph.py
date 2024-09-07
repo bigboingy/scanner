@@ -56,7 +56,6 @@ async def graph():
                 y_new = newVals[sensor_index,coord_index::3]
                 y_combined = np.hstack((y_old,y_new))
                 l.set_ydata(y_combined[-MAX_READS:])
-        
 
         # Rescale graphs
         ax1.relim(); ax2.relim(); ax3.relim()
