@@ -142,6 +142,7 @@ uint8_t imu_init(i2c_master_dev_handle_t imu_handle, uint8_t currentBank, uint8_
     vTaskDelay(20/portTICK_PERIOD_MS);
     currentBank = imu_write(imu_handle, currentBank, GYRO_CONFIG_1, (gyroScale << 1) | 0x01 );
     vTaskDelay(20/portTICK_PERIOD_MS);
+    ESP_LOGI(TAG,"Initialising IMU with acc scale %i and gyro scale %i",accScale,gyroScale);
 
     // Reset and then enable I2C master
     currentBank = imu_write(imu_handle, currentBank, USER_CTRL, 0x02);

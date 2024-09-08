@@ -10,7 +10,7 @@ import math
 # M, calibrated magnetometer data
 # T and h, calibration parameters
 # This function can also be used to calibrate accelerometer data! This is bcs both acc/mag magnitude should be constant w orientation
-def magCalibrate(Y,tol=0.001):
+def magCalibrate(Y,tol=0.01):
     # Convert Y to np array if it's not already
     if not isinstance(Y,np.ndarray):
         Y = np.array(Y)
@@ -52,10 +52,10 @@ def magCalibrate(Y,tol=0.001):
         # 6. Calculate J
         Jnew = sum(np.linalg.norm(Y-T@M-h,axis=0,ord=2)**2 + lmbd * (np.linalg.norm(M_tilde,axis=0,ord=2)**2-1)**2 ) # Paper has M instead of M_tilde
         #Jnew = sum((np.linalg.norm(M_tilde,axis=0,ord=2)**2-1)) - what a review recommends
-        print(Jnew)
+        print(f"Magnetemeter calibration convergence: {Jnew}")
         # Is this J small enough?
         if J and abs(J-Jnew)/J < tol/100:
-
+            print("Converged!")
             return M,T,h # Retrun calibrated data and calibration parameters
 
         # If not, update J
@@ -136,9 +136,10 @@ def magAlign(A,M,delta0=-69,tol=0.001):
 
         # 6. Calculate J
         Jnew = getJ(xNew)
-        print(Jnew)
+        print(f"Magnetemeter alignment convergence: {Jnew}")
         # Is this J small enough?
         if J and abs(J-Jnew)/J < tol/100:
+            print("Converged!")
             return R,delta # Retrun calibrated data and calibration parameters
         # If not, update J
         J = Jnew
@@ -299,10 +300,11 @@ def gyroCalibrate(Y,A,M,freq,wStill,tol=0.01,degrees:bool=True):
 
         # 6. Calculate J
         Jnew = getJ(xNew)
-        print(Jnew)
+        print(f"Gyroscope calibration convergence: {Jnew}")
 
         # Is this J small enough? Add in an acceptable val of 0.01 or less as conv doesn't seem to be as strong
         if J and (abs(J-Jnew)/J < tol/100 or Jnew < 0.01):
+            print("Converged!")
             return H,h # Retrun calibration parameters
         # If not, update J
         J = Jnew

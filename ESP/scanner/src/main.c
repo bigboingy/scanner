@@ -17,6 +17,8 @@
 #include "esp_gatts_api.h"
 #include "nvs_flash.h"
 
+#include "driver/gptimer.h"
+
 // Logging tag
 static const char *TAG = "MAIN";
 
@@ -43,6 +45,11 @@ uint8_t const ACC_SCALE = 1;
 uint8_t const GYRO_SCALE = 2;
 uint16_t const OFFS_VALS = 100u;
 
+struct imuTaskParams {
+    i2c_master_dev_handle_t i2c_handle;
+    gptimer_handle_t timer_handle;
+};
+
 // LED
 #define LED 2
 static uint8_t led_state = 0;
@@ -62,16 +69,17 @@ static uint8_t led_state = 0;
 #define GATTS_CHAR_UUID_MAG        0xFF04
 // Initial characteristic data
 #define GATTS_CHAR_VAL_MAX_LEN 0x40
-uint8_t sampleData[] = {0x00,0x01,0x02};
+// Byte length of data to send over ble
+#define BYTES_LIDAR 6
+#define BYTES_IMU  22
+#define BYTES_COMB BYTES_LIDAR+BYTES_IMU
+
+uint8_t sampleData[3] = {0x00,0x01,0x02};
 static esp_attr_value_t lidar_char_val = { // Attribute is a generic term for any piece of data within the GATT database.
     .attr_max_len = GATTS_CHAR_VAL_MAX_LEN, // Max length in bytes
     .attr_len = sizeof(sampleData),
     .attr_value = sampleData
 };
-// Byte length of data to be
-#define BYTES_LIDAR 6
-#define BYTES_IMU  20
-#define BYTES_COMB BYTES_LIDAR+BYTES_IMU
 
 // Function declarations
 static void ledBlink_task(void *pvParameters);
@@ -178,6 +186,7 @@ struct imuData {
     struct cartesian gyro;
     struct cartesian mag;
     uint16_t temp;
+    uint16_t count;
 };
 
 // Tasks and queues
@@ -228,6 +237,20 @@ void app_main() {
     i2c_master_dev_handle_t imu_device_handle;
     ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_handle, &dev_cfg, &imu_device_handle));
 
+    // Timer setup
+    gptimer_handle_t gptimer = NULL;
+    gptimer_config_t timer_config = {
+        .clk_src = GPTIMER_CLK_SRC_DEFAULT, // Use default clock
+        .direction = GPTIMER_COUNT_UP, // Count up
+        .resolution_hz = 1000000, // 1 MHz, 1 tick = 1 us
+        .intr_priority = 0, // Low priority interrupt (won't be used anyway)
+    };
+    ESP_ERROR_CHECK(gptimer_new_timer(&timer_config,&gptimer));
+    ESP_LOGI(TAG,"Enabling timer");
+    ESP_ERROR_CHECK(gptimer_enable(gptimer));
+    ESP_LOGI(TAG,"Starting timer");
+    ESP_ERROR_CHECK(gptimer_start(gptimer));
+
     // Bluetooth setup
     esp_err_t ret;
     // Initializing the non-volatile storage library
@@ -266,8 +289,9 @@ void app_main() {
     gpio_set_direction(LED,GPIO_MODE_OUTPUT); // Setup GPIO
     
     // Tasks
+    struct imuTaskParams imuTask = {imu_device_handle,gptimer}; // Need to prepare params for imu task
     xTaskCreate(lidarRead_task, "uartRead", 4096, NULL, 10, NULL); // Stack overflow using 2048
-    xTaskCreate(imuRead_task,"imuRead",2048,imu_device_handle,7,&imuTaskHandle);
+    xTaskCreate(imuRead_task,"imuRead",2048,&imuTask,7,&imuTaskHandle);
     xTaskCreate(ledBlink_task, "ledBlink", 2048, NULL, 3, NULL);
 }
 
@@ -350,7 +374,7 @@ static void lidarRead_task(void *pvParameters)
                     // Make sure there's room in the queue to send to
                     UBaseType_t room = uxQueueSpacesAvailable(ble_queue_lidar);
                     if( !room ){ // If no space, remove top pointer
-                        ESP_LOGW(TAG,"ble_queue_lidar full, removing top pointer");
+                        //ESP_LOGW(TAG,"ble_queue_lidar full, removing top pointer"); // Prints too much when disconnected
                         struct lidarData *top;
                         xQueueReceive(ble_queue_lidar, (void *)&top, (TickType_t)0);
                         free(top); // Free the dynamically allocated memory given to this struct
@@ -398,9 +422,15 @@ static void lidarRead_task(void *pvParameters)
 }
 
 // Task to read imu
-static void imuRead_task(void *imu_device_handle)
+static void imuRead_task(void *pvParameters)
 {
-    uint8_t imuBuffer[IMU_BUF_SIZE]; // Initialise buffer
+    // Extract params
+    struct imuTaskParams* params = (struct imuTaskParams*)pvParameters; // Cast pointer to correct type
+    i2c_master_dev_handle_t imu_device_handle = params->i2c_handle;
+    gptimer_handle_t gptimer = params->timer_handle;
+
+    uint8_t imuBuffer[IMU_BUF_SIZE]; // Initialise i2c read buffer
+    uint64_t count; // For timer
 
     for(;;)
     {
@@ -409,10 +439,13 @@ static void imuRead_task(void *imu_device_handle)
         // Read accel, gyro and external sensor (mag) registers
         imuBank = imu_read(imu_device_handle, imuBank, ACCEL_XOUT_H, imuBuffer, 22);
 
+        // Timer - get current count. Reset count to zero after filling the struct
+        gptimer_get_raw_count(gptimer,&count); // Read
+
         // Make sure there's room in the queue to send to
         UBaseType_t room = uxQueueSpacesAvailable(ble_queue_imu);
         if( !room ){ // If no space, remove top pointer
-            ESP_LOGW(TAG,"ble_queue_imu full, removing top pointer");
+            // ESP_LOGW(TAG,"ble_queue_imu full, removing top pointer");
             struct imuData *top;
             xQueueReceive(ble_queue_imu, (void *)&top, (TickType_t)0);
             free(top); // Free the dynamically allocated memory given to this struct
@@ -433,6 +466,10 @@ static void imuRead_task(void *imu_device_handle)
         mag.z = imuBuffer[18] | imuBuffer[19]<<8; // 20 is nothing, 21 is magnetic overflow (control 2)
         if(imuBuffer[21] & 0x08) ESP_LOGW(TAG,"Magnetic overflow occurred");
         dataPointer->acc = acc; dataPointer->gyro = gyro; dataPointer->mag = mag;
+        dataPointer -> count = (uint16_t) count; // Convert to uint16.
+        // We expect a count around e-2/e-6=e4 which is within uint16's range, but if not print a warning
+        if( count > 0xFFFF ) ESP_LOGW(TAG,"Count overflow, 64 bit value: %"PRIu64"",count);
+        gptimer_set_raw_count(gptimer,0); // Reset timer, immediately starts counting
 
         // Add pointer to data to imu_queue
         if( xQueueSendToBack(ble_queue_imu, (void *)&dataPointer, (TickType_t)0 ) == pdPASS ){
@@ -609,7 +646,7 @@ static void gatts_lidar_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t 
 
         // Make sure we aren't exceeding MTU limit
         if( (BYTES_COMB)*readsToSend > ESP_GATT_MAX_ATTR_LEN ) {
-            readsToSend = 19; // floor(ESP_GATT_MAX_ATTR_LEN / (BYTES_COMB)
+            readsToSend = 18; // floor(ESP_GATT_MAX_ATTR_LEN / (BYTES_COMB)
             ESP_LOGW(TAG,"More data available than can be sent in one ble transaction");
         }
 
@@ -656,6 +693,8 @@ static void gatts_lidar_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t 
                 rsp.attr_value.value[(BYTES_COMB)*i+23] = data_imu->mag.y >> 8; // Mag y high
                 rsp.attr_value.value[(BYTES_COMB)*i+24] = data_imu->mag.z & 0xFF; // Mag z low
                 rsp.attr_value.value[(BYTES_COMB)*i+25] = data_imu->mag.z >> 8; // Mag z high
+                rsp.attr_value.value[(BYTES_COMB)*i+26] = data_imu->count >> 8; // Count high
+                rsp.attr_value.value[(BYTES_COMB)*i+27] = data_imu->count & 0xFF; // Count low
                 free(data_imu); // Free the memory
             }
             else ESP_LOGW(TAG,"ble_queue_imu receive failed"); // Leave as zeros to send

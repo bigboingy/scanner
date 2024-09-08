@@ -43,19 +43,17 @@ async def graph():
         l0[0].set_ydata(y_combined[-MAX_READS:])
 
         # IMU update
-        for sensor_index,l_list in enumerate((l1,l2,l3)): # For each sensor
-            
-            # Extract all the reads
-            imus = data["imu"]
-            newVals = np.empty((3,3*len(imus))) # Initialise matrix (3x3N) where N is no reads
-            for read_index,val in enumerate(imus): # Add new reads to 3xN array
-                newVals[:,3*read_index:3*read_index+3] = val.extract() 
+        imus = data["imu"]
+        newReads = np.empty((3,3*len(imus))) # Initialise matrix (3x3N) where N is no reads
+        for read_index,imu in enumerate(imus): # Add new reads to 3xN array. Row is coord col is sensor
+            newReads[:,3*read_index:3*read_index+3] = imu.calibrate(magCal=True,accCal=True,magAlign=True,gyroCal=True).extract()
 
-            for coord_index,l in enumerate(l_list): # For each line (coordinate for a sensor)
-                y_old = l.get_ydata()
-                y_new = newVals[sensor_index,coord_index::3]
+        for sensor_index,l in enumerate((l1,l2,l3)): # For each sensor, get corresponding line list
+            for coord_index in range(3): # For each line (coordinate)
+                y_old = l[coord_index].get_ydata()
+                y_new = newReads[coord_index,sensor_index::3] # Rows are coords and cols are sensors
                 y_combined = np.hstack((y_old,y_new))
-                l.set_ydata(y_combined[-MAX_READS:])
+                l[coord_index].set_ydata(y_combined[-MAX_READS:])
 
         # Rescale graphs
         ax1.relim(); ax2.relim(); ax3.relim()
@@ -64,5 +62,6 @@ async def graph():
         # For graph event loop
         plt.pause(0.05)
         
-
-run(graph(),loop=True)
+        
+if __name__ == "__main__":
+    run(graph(),loop=True)

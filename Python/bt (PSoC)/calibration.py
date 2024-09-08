@@ -12,7 +12,7 @@ import math
 import time
 
 # Function to apply calibration facrtors to a list of imu tuples (as returned by bt read)
-def applyCalibration(imus:list,magCal:bool=True,accCal=True,magAlign:bool=True,gyroCal:bool=True):
+def applyCalibration(imus:list,magCal:bool=True,accCal:bool=True,magAlign:bool=True,gyroCal:bool=True):
 
     N = len(imus) # How many readings?
 
