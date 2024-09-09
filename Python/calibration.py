@@ -12,10 +12,10 @@ import numpy as np
 async def calibrate():
 
     # Settings
-    NO_READS = 12 # How many datapoints
+    NO_READS = 20 # How many datapoints
     AV = 20 # How many reads are taken at stationary datapoints, to be averaged
     ROT_TIME = 2 # How many seconds does rotation go for?
-    DELAY = 3 # How many s to give user to position imu
+    DELAY = 1 # How many s to give user to position imu
     moving_reads = [] #[12,15,18] # Which reads are moving?
 
     # Storage
@@ -49,14 +49,16 @@ async def calibrate():
             static_imus.append(av) # Add to storage list
             print("Reading taken!")
 
-    # Generate static arrays and arguments
+    # Generate arrays for calibration
     N = len(static_imus) # How many static readings?
     A,G,M = np.empty((3,N)),np.empty((3,N)),np.empty((3,N)) # Static reading arrays, 3xN
-    for i in range(N):
-        data = static_imus[i].extract()
-        A[:,i:i+1] = data[:,0:1]
-        G[:,i:i+1] = data[:,1:2]
-        M[:,i:i+1] = data[:,2:3]
+    for i in range(N): # For each static_imu
+        reading = static_imus[i].extract()
+        A[:,i:i+1] = reading[:,0:1]
+        G[:,i:i+1] = reading[:,1:2]
+        M[:,i:i+1] = reading[:,2:3]
+
+    np.savetxt("sample_M",M) # For debugging
 
     # Calibrate magnetometer
     M_cal,Tm,hm = algorithms.magCalibrate(M)
@@ -78,9 +80,46 @@ async def calibrate():
     # Galibrate and align gyro
 
 
+    # Visualisation
+    import matplotlib.pyplot as plt
+    fig = plt.figure()
+    ax = plt.axes(projection='3d')
+    ax.set_xlabel('x')
+    ax.set_ylabel('y')
+    ax.set_zlabel('z')
+    fig = plt.figure()
+    ax1 = plt.axes(projection='3d')
+    ax1.set_xlabel('x')
+    ax1.set_ylabel('y')
+    ax1.set_zlabel('z')
+    M = np.loadtxt("sample_M")
+    ax.scatter(M[0:1,:],M[1:2,:],M[2:3,:],marker='o',c='r' )
+    M_cal,_,_ = algorithms.magCalibrate(M)
+    ax1.scatter(M_cal[0:1,:],M_cal[1:2,:],M_cal[2:3,:],marker='o',c='b',)
+
+    plt.show()
 
 
 # Script for generating calibration data
 if __name__ == "__main__":
+    
 
     run(calibrate())
+
+    # import matplotlib.pyplot as plt
+    # fig = plt.figure()
+    # ax = plt.axes(projection='3d')
+    # ax.set_xlabel('x')
+    # ax.set_ylabel('y')
+    # ax.set_zlabel('z')
+    # fig = plt.figure()
+    # ax1 = plt.axes(projection='3d')
+    # ax1.set_xlabel('x')
+    # ax1.set_ylabel('y')
+    # ax1.set_zlabel('z')
+    # M = np.loadtxt("sample_M")
+    # ax.scatter(M[0:1,:],M[1:2,:],M[2:3,:],marker='o',c='r' )
+    # M_cal,_,_ = algorithms.magCalibrate(M)
+    # ax1.scatter(M_cal[0:1,:],M_cal[1:2,:],M_cal[2:3,:],marker='o',c='b',)
+
+    # plt.show()

@@ -23,10 +23,10 @@ gyroScaleFactors = {
     2: 32.8, # +-1000dps
     3: 16.4 # +-2000dps
 }
-ACC_SCALE_FAC = accScaleFactors[ACC_SCALE] #LSB/g
-GYRO_SCALE_FAC = gyroScaleFactors[GYRO_SCALE] #LSB/dps
-MAG_SCALE_FAC = 1/0.15 #LSB/microTesla
-TEMP_SCALE_FAC = 333.87 #LSB/degreeC
+ACC_SCALE_FAC = accScaleFactors[ACC_SCALE] # LSB/g
+GYRO_SCALE_FAC = gyroScaleFactors[GYRO_SCALE] # LSB/dps
+MAG_SCALE_FAC = 1/0.15 # LSB/microTesla
+TEMP_SCALE_FAC = 333.87 # LSB/degreeC
 
 # Function to convert single integer (base 10) into two's complement integer
 # Params: val, the value to be converted
@@ -66,12 +66,12 @@ class Imu:
     count: int = 0
     def populate(self,bytes_imu):
         self.acc = Cartesian(-twos(bytes_imu[0] << 8 | bytes_imu[1])/ACC_SCALE_FAC, # Acc x
-                             twos(bytes_imu[2] << 8 | bytes_imu[3])/ACC_SCALE_FAC, # Acc y
-                             twos(bytes_imu[4] << 8 | bytes_imu[5])/ACC_SCALE_FAC) # Acc z
+                             -twos(bytes_imu[2] << 8 | bytes_imu[3])/ACC_SCALE_FAC, # Acc y
+                             -twos(bytes_imu[4] << 8 | bytes_imu[5])/ACC_SCALE_FAC) # Acc z
         
         self.gyro = Cartesian(twos(bytes_imu[6] << 8 | bytes_imu[7])/GYRO_SCALE_FAC,   # Gyro x
-                              -twos(bytes_imu[8] << 8 | bytes_imu[9])/GYRO_SCALE_FAC,   # Gyro y
-                              -twos(bytes_imu[10] << 8 | bytes_imu[11])/GYRO_SCALE_FAC) # Gyro z
+                              twos(bytes_imu[8] << 8 | bytes_imu[9])/GYRO_SCALE_FAC,   # Gyro y
+                              twos(bytes_imu[10] << 8 | bytes_imu[11])/GYRO_SCALE_FAC) # Gyro z
         
         # TEMP_degC = ((TEMP_OUT – RoomTemp_Offset)/Temp_Sensitivity) + 21degC
         self.temp = ( twos(bytes_imu[12] << 8 | bytes_imu[13]) - 21 ) / TEMP_SCALE_FAC + 21

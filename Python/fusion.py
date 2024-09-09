@@ -17,7 +17,7 @@ async def fusion():
 
     # Fusion setup
     ahrs = imufusion.Ahrs()
-    ahrs.settings = imufusion.Settings(imufusion.CONVENTION_NED,  # convention
+    ahrs.settings = imufusion.Settings(imufusion.CONVENTION_NWU,  # convention
                                     0.5,  # gain
                                     1000,  # gyroscope range
                                     10,  # acceleration rejection
@@ -35,8 +35,8 @@ async def fusion():
 
         # Loop for each imu returned, putting R into the queue
         for imu in imus:
-                
-            data = imu.calibrate(magCal=False,accCal=False,magAlign=False,gyroCal=False).extract()
+            imu.calibrate(magCal=True,accCal=True,magAlign=True,gyroCal=False) # Calibrate imu object, changing its values
+            data = imu.extract()
             # Update sensor fusion. Rakes gyro (1 by 3 matrix), acc (1 by 3 matrix), mag (1 by 3 matrix) and dt
             ahrs.update(data[:,1],data[:,0],data[:,2],imu.count)
 

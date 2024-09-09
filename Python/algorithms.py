@@ -10,7 +10,7 @@ import math
 # M, calibrated magnetometer data
 # T and h, calibration parameters
 # This function can also be used to calibrate accelerometer data! This is bcs both acc/mag magnitude should be constant w orientation
-def magCalibrate(Y,tol=0.01):
+def magCalibrate(Y,tol=0.001):
     # Convert Y to np array if it's not already
     if not isinstance(Y,np.ndarray):
         Y = np.array(Y)
