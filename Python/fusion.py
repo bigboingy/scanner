@@ -4,16 +4,18 @@ from config import FREQ_LIDAR
 from ble import run, read
 import asyncio
 import open3d as o3d
-#import time
 
-queue_R = asyncio.Queue() # Defaults to infinite length
-
-#queue_time = asyncio.Queue() # For debugging how long it takes for read to be visualised
+queue_R = asyncio.Queue() # Queue for rotation matrices (3x3 np arrays)
+queue_lidar = asyncio.Queue() # Queue for lidars, which correspond with R in queue_R (lidar objects)
 
 # Loop to read imu vals from bt and apply fusion
-# Pushes rotation matrices to a queue
+# Pushes rotation matrices and lidars to queues
+# Params:
+# calibrate enables calibration of imu objects
+# debug enables status printing
+          
 # Blocks on read()
-async def fusion():
+async def fusion(calibrate=False, debug=False):
 
     # Fusion setup
     ahrs = imufusion.Ahrs()
@@ -23,45 +25,43 @@ async def fusion():
                                     10,  # acceleration rejection
                                     10,  # magnetic rejection, max difference bw algorithm and magnetometer before mag is ignored
                                     5 * FREQ_LIDAR)  # recovery trigger period = 5 seconds
-    # How many rotation matrices to send to queue_R. 
-    R_TO_VIS = 3 # 3 seems good at current settings. Each one takes more time in visuslisation
 
     # Infinite loop
     while 1:
-
         # Get ble data
-        imus = (await read())["imu"] # Only keep the imus list, discarding lidars
-        step = (len(imus)-1)//(R_TO_VIS-1)
+        data_ble = await read()
+
+        for lidar in data_ble['lidar']: # Put lidar objects into queue individually
+            queue_lidar.put_nowait(lidar)
+
+        imus = data_ble['imu'] # Extract imus
 
         # Loop for each imu returned, putting R into the queue
         for imu in imus:
-            imu.calibrate(magCal=True,accCal=True,magAlign=True,gyroCal=False) # Calibrate imu object, changing its values
-            data = imu.extract()
+            if calibrate: imu.calibrate(magCal=True,accCal=True,magAlign=True,gyroCal=True) # Calibrate imu object, changing its values
+            reading = imu.extract()
             # Update sensor fusion. Rakes gyro (1 by 3 matrix), acc (1 by 3 matrix), mag (1 by 3 matrix) and dt
-            ahrs.update(data[:,1],data[:,0],data[:,2],imu.count)
-
-            # Add rotation matrix to queue if it's to be visualised
-            if imu in imus[::step]:
-                queue_R.put_nowait(ahrs.quaternion.to_matrix())
-                #queue_time.put_nowait(time.time())
+            ahrs.update(reading[:,1],reading[:,0],reading[:,2],imu.count)
+            # Add rotation matrix to queue
+            queue_R.put_nowait(ahrs.quaternion.to_matrix())
 
             # Print status flags and internal states
-            flags = ahrs.flags
-            if flags.initialising: print('Initialising')
-            if flags.angular_rate_recovery: print('Angular rate recovery')
-            if flags.acceleration_recovery: print('Acceleration recovery')
-            if flags.magnetic_recovery: print('Magnetic recovery')
-            states = ahrs.internal_states
-            if states.accelerometer_ignored:
-                print('Accelerometer ignored, error: %.1f' % states.acceleration_error)
-            if states.magnetometer_ignored:
-                print('Magnetometer ignored, error: %.1f' % states.magnetic_error)
-            print('x')
-        
+            if debug:
+                flags = ahrs.flags
+                if flags.initialising: print('Initialising')
+                if flags.angular_rate_recovery: print('Angular rate recovery')
+                if flags.acceleration_recovery: print('Acceleration recovery')
+                if flags.magnetic_recovery: print('Magnetic recovery')
+                states = ahrs.internal_states
+                if states.accelerometer_ignored:
+                    print('Accelerometer ignored, error: %.1f' % states.acceleration_error)
+                if states.magnetometer_ignored:
+                    print('Magnetometer ignored, error: %.1f' % states.magnetic_error)
+                print('x')
         
 
-# Reads fusion output from the queue to run o3d visualisaion
-# Blocks on waiting for a queue item
+# Reads fusion output from the queue to run o3d visualisaion of rotation matrices
+# Blocks on waiting for a queue_R matrix
 async def fusionVis():
 
     # Open3d visualisation setup
@@ -80,16 +80,14 @@ async def fusionVis():
     vis.add_geometry(axis)
 
     # Loop to update geometry
+    R_SKIP = 5 # How many rotation matrices to skip, so that animation doesn't lag
     running = True # Loop can exit on window close
     while running:
 
         # Get rotation
-        R = await queue_R.get() # Wait for a rotation matrix to become available
-        queue_R.task_done()
-
-        # stamp = queue_time.get_nowait()
-        # queue_time.task_done()
-        # print(f"It took {time.time()-stamp}s to visualise")
+        for _ in range(R_SKIP+1): # Skip R_SKIP rotation matrices
+            R = await queue_R.get() # Wait for a rotation matrix to become available
+            queue_R.task_done()
 
         # Update geometry. The following actions cost ~0.01 seconds
         line_set.points = o3d.utility.Vector3dVector(points) # Reset points
@@ -99,11 +97,10 @@ async def fusionVis():
         running = vis.poll_events() # Returns false on window close
         vis.update_renderer()
 
+    vis.destroy_window()
+
 # Test
 if __name__ == "__main__":
 
-    a = [1,2,3,4,5,6,7,8,9]
-
-
-    run(fusion(),fusionVis(),loop=True)
+    run(fusion(calibrate=True),fusionVis(),loop=True)
     

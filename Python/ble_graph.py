@@ -17,7 +17,7 @@ async def graph():
     l3 = ax3.plot(x_init,y_init,x_init,y_init,x_init,y_init)
     # Style
     ax0.set_xlim([1, MAX_READS]) # Lidar limits
-    ax0.set_ylim([0, 10000])
+    ax0.set_ylim([0, 10])
     ax0.set_title('Distance (mm)')
     ax1.set_title('Accelerometer (g)')
     ax2.set_title('Gyroscope (dps)')
@@ -74,28 +74,28 @@ async def graph():
         ax1.relim(); ax2.relim(); ax3.relim()
         ax1.autoscale(); ax2.autoscale(); ax3.autoscale()
 
-        # Mag 3D graph update
-        MAX = 100
-        for reading in imus:
-            reading.calibrate(magCal=True,accCal=False,magAlign=True,gyroCal=False)
+        # # Mag 3D graph update
+        # MAX = 100
+        # for reading in imus:
+        #     reading.calibrate(magCal=True,accCal=False,magAlign=True,gyroCal=False)
 
-            # Add to storage
-            if abs(reading.mag.x)<MAX: x_mag.append(reading.mag.x)
-            if abs(reading.mag.y)<MAX: y_mag.append(reading.mag.y)
-            if abs(reading.mag.z)<MAX: z_mag.append(reading.mag.z)
+        #     # Add to storage
+        #     if abs(reading.mag.x)<MAX: x_mag.append(reading.mag.x)
+        #     if abs(reading.mag.y)<MAX: y_mag.append(reading.mag.y)
+        #     if abs(reading.mag.z)<MAX: z_mag.append(reading.mag.z)
 
-            # Work out heading
-            heading = 0
-            if reading.mag.x != 0: heading = math.atan2(reading.mag.y,reading.mag.x)*180/math.pi
-            if heading < 0: heading = heading + 360
-            print(heading)
+        #     # Work out heading
+        #     heading = 0
+        #     if reading.mag.x != 0: heading = math.atan2(reading.mag.y,reading.mag.x)*180/math.pi
+        #     if heading < 0: heading = heading + 360
+        #     print(heading)
         
-            # Prepare new 'offsets'
-            scat._offsets3d = (x_mag,y_mag,z_mag)
+        #     # Prepare new 'offsets'
+        #     scat._offsets3d = (x_mag,y_mag,z_mag)
 
-        # Rescale
-        ax4.set_xlim3d(min(x_mag),max(x_mag)); ax4.set_ylim3d(min(y_mag),max(y_mag)); ax4.set_zlim3d(min(z_mag),max(z_mag))
-        ax4.set_box_aspect([1,1,1])
+        # # Rescale
+        # ax4.set_xlim3d(min(x_mag),max(x_mag)); ax4.set_ylim3d(min(y_mag),max(y_mag)); ax4.set_zlim3d(min(z_mag),max(z_mag))
+        # ax4.set_box_aspect([1,1,1])
 
         # For graph event loop
         plt.pause(0.05)

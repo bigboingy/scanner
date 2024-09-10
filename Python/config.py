@@ -31,13 +31,20 @@ TEMP_SCALE_FAC = 333.87 # LSB/degreeC
 # Function to convert single integer (base 10) into two's complement integer
 # Params: val, the value to be converted
 # Return: two's complement of the integer
-def twos(val: int) -> int:
-    bits = val.bit_length()
-    if bits == 0: return 0
-    bits_rounded = -(bits//-8) * 8 # Ceil division * 8
-    if val & (1 << (bits_rounded-1)):
-        return val - (1 << bits_rounded)
-    return val
+# def twos(val: int) -> int:
+#     bits = val.bit_length()
+#     if bits == 0: return 0
+#     bits_rounded = -(bits//-8) * 8 # Ceil division * 8
+#     if val & (1 << (bits_rounded-1)):
+#         return val - (1 << bits_rounded)
+#     return val
+
+# Function to convert single integer (base 10) into two's complement integer
+# In: val, length: how many bytes are being converted
+# Out: two's complement of the integer
+def twos(val: int, length: int) -> int:
+    byte = val.to_bytes(length, byteorder='big', signed=False) # Convert to byte object, big endian
+    return int.from_bytes(byte, byteorder='big', signed=True) # Use inbuilt 2s complement conversion
 
 # Dataclasses
 from dataclasses import dataclass
@@ -47,9 +54,9 @@ class Lidar:
     str: int = 0
     temp: int = 0
     def populate(self,bytes_lidar): # Populate using 6 bytes in order
-        self.dist = bytes_lidar[0] | bytes_lidar[1]<<8
+        self.dist = (bytes_lidar[0] | bytes_lidar[1]<<8) / 1000 # Convert to metres
         self.str = bytes_lidar[2] | bytes_lidar[3]<<8
-        self.temp = int((bytes_lidar[4] | bytes_lidar[5]<<8)/8 - 256) # Is always an integer anyway
+        self.temp = (bytes_lidar[4] | bytes_lidar[5]<<8)/8 - 256
 
 @dataclass
 class Cartesian:
@@ -65,20 +72,40 @@ class Imu:
     temp: int = 0
     count: int = 0
     def populate(self,bytes_imu):
-        self.acc = Cartesian(-twos(bytes_imu[0] << 8 | bytes_imu[1])/ACC_SCALE_FAC, # Acc x
-                             -twos(bytes_imu[2] << 8 | bytes_imu[3])/ACC_SCALE_FAC, # Acc y
-                             -twos(bytes_imu[4] << 8 | bytes_imu[5])/ACC_SCALE_FAC) # Acc z
+        # self.acc = Cartesian(-twos(bytes_imu[0] << 8 | bytes_imu[1])/ACC_SCALE_FAC, # Acc x
+        #                      -twos(bytes_imu[2] << 8 | bytes_imu[3])/ACC_SCALE_FAC, # Acc y
+        #                      -twos(bytes_imu[4] << 8 | bytes_imu[5])/ACC_SCALE_FAC) # Acc z
         
-        self.gyro = Cartesian(twos(bytes_imu[6] << 8 | bytes_imu[7])/GYRO_SCALE_FAC,   # Gyro x
-                              twos(bytes_imu[8] << 8 | bytes_imu[9])/GYRO_SCALE_FAC,   # Gyro y
-                              twos(bytes_imu[10] << 8 | bytes_imu[11])/GYRO_SCALE_FAC) # Gyro z
+        # self.gyro = Cartesian(twos(bytes_imu[6] << 8 | bytes_imu[7])/GYRO_SCALE_FAC,   # Gyro x
+        #                       twos(bytes_imu[8] << 8 | bytes_imu[9])/GYRO_SCALE_FAC,   # Gyro y
+        #                       twos(bytes_imu[10] << 8 | bytes_imu[11])/GYRO_SCALE_FAC) # Gyro z
+        
+        # # TEMP_degC = ((TEMP_OUT – RoomTemp_Offset)/Temp_Sensitivity) + 21degC
+        # self.temp = ( twos(bytes_imu[12] << 8 | bytes_imu[13]) - 21 ) / TEMP_SCALE_FAC + 21
+
+        # self.mag = Cartesian(twos(bytes_imu[14] | bytes_imu[15] << 8)/MAG_SCALE_FAC, # Mag x
+        #                      -twos(bytes_imu[16] | bytes_imu[17] << 8)/MAG_SCALE_FAC, # Mag y, inverted (datasheet)
+        #                      -twos(bytes_imu[18] | bytes_imu[19] << 8)/MAG_SCALE_FAC) # Mag z, inverted
+
+        self.acc = Cartesian(-twos(bytes_imu[0] << 8 | bytes_imu[1],2)/ACC_SCALE_FAC, # Acc x
+                             -twos(bytes_imu[2] << 8 | bytes_imu[3],2)/ACC_SCALE_FAC, # Acc y
+                             -twos(bytes_imu[4] << 8 | bytes_imu[5],2)/ACC_SCALE_FAC) # Acc z
+        
+        self.gyro = Cartesian(twos(bytes_imu[6] << 8 | bytes_imu[7],2)/GYRO_SCALE_FAC,   # Gyro x
+                              twos(bytes_imu[8] << 8 | bytes_imu[9],2)/GYRO_SCALE_FAC,   # Gyro y
+                              twos(bytes_imu[10] << 8 | bytes_imu[11],2)/GYRO_SCALE_FAC) # Gyro z
         
         # TEMP_degC = ((TEMP_OUT – RoomTemp_Offset)/Temp_Sensitivity) + 21degC
-        self.temp = ( twos(bytes_imu[12] << 8 | bytes_imu[13]) - 21 ) / TEMP_SCALE_FAC + 21
+        self.temp = ( twos(bytes_imu[12] << 8 | bytes_imu[13],2) - 21 ) / TEMP_SCALE_FAC + 21
 
-        self.mag = Cartesian(twos(bytes_imu[14] | bytes_imu[15] << 8)/MAG_SCALE_FAC, # Mag x
-                             -twos(bytes_imu[16] | bytes_imu[17] << 8)/MAG_SCALE_FAC, # Mag y, inverted (datasheet)
-                             -twos(bytes_imu[18] | bytes_imu[19] << 8)/MAG_SCALE_FAC) # Mag z, inverted
+        self.mag = Cartesian(twos(bytes_imu[14] | bytes_imu[15] << 8,2)/MAG_SCALE_FAC, # Mag x
+                             -twos(bytes_imu[16] | bytes_imu[17] << 8,2)/MAG_SCALE_FAC, # Mag y, inverted (datasheet)
+                             -twos(bytes_imu[18] | bytes_imu[19] << 8,2)/MAG_SCALE_FAC) # Mag z, inverted
+        
+        # print(f"integer (no twos) {bytes_imu[14] | bytes_imu[15] << 8}")
+        # print(f"binary of integer {bin(bytes_imu[14] | bytes_imu[15] << 8)}")
+        # print(f"twos {twos(bytes_imu[14] | bytes_imu[15] << 8)}")
+        # print(f"binary of twos {bin(twos(bytes_imu[14] | bytes_imu[15] << 8))}")
 
         self.count = (bytes_imu[20] << 8 | bytes_imu[21])/FREQ_TIMER # Count (s)
     

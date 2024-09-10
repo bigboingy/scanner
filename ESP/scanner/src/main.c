@@ -37,8 +37,8 @@ static const char *TAG = "MAIN";
 #define LIDAR_PACKET_SIZE 9
 
 // IMU
-#define SCL 25 // D2. 4 (D12) Will be used in final PCB, but will ruin debugging now!
-#define SDA 26 // D3. 12 (D13) Will be used in final PCB
+#define SCL 4 // 25 (D2) used for debugging. 4 (D12) used in final PCB
+#define SDA 12 // 26 (D3) used for debugging. 12 (D13) used in final PCB. Is also MTDI strapping, oops!
 #define IMU_BUF_SIZE 22
 uint8_t imuBank; // Track current imu bank
 uint8_t const ACC_SCALE = 1;
@@ -177,9 +177,9 @@ struct lidarData {
 };
 // Structs for imu data
 struct cartesian {
-    uint16_t x;
-    uint16_t y;
-    uint16_t z;
+    int16_t x;
+    int16_t y;
+    int16_t z;
 };
 struct imuData {
     struct cartesian acc;
@@ -225,7 +225,7 @@ void app_main() {
     .scl_io_num = SCL,
     .sda_io_num = SDA,
     .glitch_ignore_cnt = 7,
-    .flags.enable_internal_pullup = true,
+    .flags.enable_internal_pullup = true, // Use internal 45 kOhm resistor for slightly stronger pullup
     };
     i2c_master_bus_handle_t bus_handle;
     ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_mst_config, &bus_handle));
@@ -474,6 +474,7 @@ static void imuRead_task(void *pvParameters)
         // Add pointer to data to imu_queue
         if( xQueueSendToBack(ble_queue_imu, (void *)&dataPointer, (TickType_t)0 ) == pdPASS ){
             // Success
+            // ESP_LOGI(TAG,"Sending mag %f x %f y %f z",(float)mag.x*0.15,(float)mag.y*0.15,(float)mag.z*0.15);
         } else {
             ESP_LOGW(TAG,"Failed to add pointer to ble_queue_imu");
         }
