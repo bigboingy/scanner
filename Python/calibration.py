@@ -7,6 +7,8 @@ import asyncio
 from ble import run, read
 from config import Imu, Cartesian
 import numpy as np
+import matplotlib.pyplot as plt
+
 
 # Function to run through calibration routine
 async def calibrate():
@@ -15,7 +17,7 @@ async def calibrate():
     NO_READS = 20 # How many datapoints
     AV = 20 # How many reads are taken at stationary datapoints, to be averaged
     ROT_TIME = 2 # How many seconds does rotation go for?
-    DELAY = 1 # How many s to give user to position imu
+    DELAY = 2 # How many s to give user to position imu
     moving_reads = [] #[12,15,18] # Which reads are moving?
 
     # Storage
@@ -80,23 +82,21 @@ async def calibrate():
     # Galibrate and align gyro
 
 
-    # Visualisation
-    import matplotlib.pyplot as plt
+    # Visualisation of magnetometer calibration
     fig = plt.figure()
     ax = plt.axes(projection='3d')
     ax.set_xlabel('x')
     ax.set_ylabel('y')
     ax.set_zlabel('z')
+    ax.title.set_text('Uncalibrated points')
     fig = plt.figure()
     ax1 = plt.axes(projection='3d')
     ax1.set_xlabel('x')
     ax1.set_ylabel('y')
     ax1.set_zlabel('z')
-    M = np.loadtxt("sample_M")
+    ax1.title.set_text('Calibrated points')
     ax.scatter(M[0:1,:],M[1:2,:],M[2:3,:],marker='o',c='r' )
-    M_cal,_,_ = algorithms.magCalibrate(M)
     ax1.scatter(M_cal[0:1,:],M_cal[1:2,:],M_cal[2:3,:],marker='o',c='b',)
-
     plt.show()
 
 
@@ -105,21 +105,3 @@ if __name__ == "__main__":
     
 
     run(calibrate())
-
-    # import matplotlib.pyplot as plt
-    # fig = plt.figure()
-    # ax = plt.axes(projection='3d')
-    # ax.set_xlabel('x')
-    # ax.set_ylabel('y')
-    # ax.set_zlabel('z')
-    # fig = plt.figure()
-    # ax1 = plt.axes(projection='3d')
-    # ax1.set_xlabel('x')
-    # ax1.set_ylabel('y')
-    # ax1.set_zlabel('z')
-    # M = np.loadtxt("sample_M")
-    # ax.scatter(M[0:1,:],M[1:2,:],M[2:3,:],marker='o',c='r' )
-    # M_cal,_,_ = algorithms.magCalibrate(M)
-    # ax1.scatter(M_cal[0:1,:],M_cal[1:2,:],M_cal[2:3,:],marker='o',c='b',)
-
-    # plt.show()

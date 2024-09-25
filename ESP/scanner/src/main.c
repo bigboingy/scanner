@@ -159,14 +159,6 @@ static struct gatts_profile_inst gatts_profile_tab[PROFILE_NUM] = {
         .gatts_cb = gatts_lidar_event_handler,
         .gatts_if = ESP_GATT_IF_NONE,
     },
-    // [IMU_APP_ID] = {
-    //     .gatts_cb = gatts_imu_app_event_handler,
-    //     .gatts_if = ESP_GATT_IF_NONE,
-    // },
-    // [LIDAR_IMU_APP_ID] = {
-    //     .gatts_cb = gatts_lidar_app_event_handler,
-    //     .gatts_if = ESP_GATT_IF_NONE,
-    // },
 };
 
 // Struct for lidar data
@@ -283,6 +275,8 @@ void app_main() {
     // if (ret){ ESP_LOGE(TAG, "gatts app register error, error code = %x", ret); return;}
 
     // Initialise icm20948
+    vTaskDelay(100/portTICK_PERIOD_MS); // 100ms delay so that flicking the switch isn't felt in gyroscope calibration
+    ESP_LOGI(TAG,"Calibrating IMU");
     imuBank = imu_init(imu_device_handle, imuBank, ACC_SCALE, GYRO_SCALE, OFFS_VALS);
 
     // LED setup
@@ -628,8 +622,8 @@ static void gatts_lidar_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t 
         break;
 
     case ESP_GATTS_READ_EVT: // On read request
-        ESP_LOGI(TAG,"GATT_READ_EVT, conn_id %d, trans id %"PRIu32", handle %d",
-                param->read.conn_id, param->read.trans_id, param->read.handle);
+        // ESP_LOGI(TAG,"GATT_READ_EVT, conn_id %d, trans id %"PRIu32", handle %d",
+        //         param->read.conn_id, param->read.trans_id, param->read.handle);
 
         esp_gatt_rsp_t rsp; // Response struct
         memset(&rsp,0,sizeof(esp_gatt_rsp_t)); // Initialise rsp to 0
@@ -702,7 +696,7 @@ static void gatts_lidar_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t 
         }
         // 3. Send!
         esp_ble_gatts_send_response(gatts_if,param->read.conn_id,param->read.trans_id,ESP_GATT_OK, &rsp);
-        ESP_LOGI(TAG,"Sent %d packets",readsToSend);
+        // ESP_LOGI(TAG,"Sent %d packets",readsToSend);
         break;
     default: break;
     }

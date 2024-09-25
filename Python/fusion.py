@@ -38,7 +38,7 @@ async def fusion(calibrate=False, debug=False):
 
         # Loop for each imu returned, putting R into the queue
         for imu in imus:
-            if calibrate: imu.calibrate(magCal=True,accCal=True,magAlign=True,gyroCal=True) # Calibrate imu object, changing its values
+            if calibrate: imu.calibrate(magCal=True,accCal=True,magAlign=True,gyroCal=False) # Calibrate imu object, changing its values
             reading = imu.extract()
             # Update sensor fusion. Rakes gyro (1 by 3 matrix), acc (1 by 3 matrix), mag (1 by 3 matrix) and dt
             ahrs.update(reading[:,1],reading[:,0],reading[:,2],imu.count)
@@ -67,8 +67,8 @@ async def fusionVis():
     # Open3d visualisation setup
     vis = o3d.visualization.Visualizer()
     vis.create_window(height=480*5, width=640*5)
-    points = [[-.8, -.4, -.2],[.8, -.4, -.2],[-.8, .4, -.2],[.8, .4, -.2], # Make a cube
-              [-.8, -.4, .2],[.8, -.4, .2],[-.8, .4, .2],[.8, .4, .2]]
+    points = [[-.8, -.4, -.32],[.8, -.4, -.32],[-.8, .4, -.32],[.8, .4, -.32], # Make a box
+              [-.8, -.4, .32],[.8, -.4, .32],[-.8, .4, .32],[.8, .4, .32]]
     lines = [[0, 1],[0, 2],[1, 3],[2, 3],[4, 5],[4, 6],
             [5, 7],[6, 7],[0, 4],[1, 5],[2, 6],[3, 7]]
     line_set = o3d.geometry.LineSet(
@@ -102,5 +102,5 @@ async def fusionVis():
 # Test
 if __name__ == "__main__":
 
-    run(fusion(calibrate=True),fusionVis(),loop=True)
+    run(fusion(calibrate=True, debug=True),fusionVis(),loop=True)
     

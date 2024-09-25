@@ -25,17 +25,17 @@ async def graph():
     ax1.legend(l1,('x','y','z'),loc='upper left')
     ax2.legend(l2,('x','y','z'),loc='upper left')
     ax3.legend(l3,('x','y','z'),loc='upper left')
-    # Mag 3D figure
-    fig1 = plt.figure()
-    ax4 = plt.axes(projection='3d')
-    ax4.set_xlim3d(-1,1) 
-    ax4.set_ylim3d(-1,1) 
-    ax4.set_zlim3d(-1,1) 
-    ax4.set_xlabel('x')
-    ax4.set_ylabel('y')
-    ax4.set_zlabel('z')
-    x_mag, y_mag, z_mag = [0], [0], [0] # Lists for mag scatter plot
-    scat = ax4.scatter(x_mag,y_mag,z_mag,marker='o',c='r') # Plot origin as a red dot
+    # # Mag 3D figure
+    # fig1 = plt.figure()
+    # ax4 = plt.axes(projection='3d')
+    # ax4.set_xlim3d(-1,1) 
+    # ax4.set_ylim3d(-1,1) 
+    # ax4.set_zlim3d(-1,1) 
+    # ax4.set_xlabel('x')
+    # ax4.set_ylabel('y')
+    # ax4.set_zlabel('z')
+    # x_mag, y_mag, z_mag = [0], [0], [0] # Lists for mag scatter plot
+    # scat = ax4.scatter(x_mag,y_mag,z_mag,marker='o',c='r') # Plot origin as a red dot
     
     while True:
         
@@ -59,7 +59,7 @@ async def graph():
         newReads = np.empty((3,3*len(imus))) # Initialise matrix (3x3N) where N is no reads
         for read_index,imu in enumerate(imus): # Add new reads to 3xN array. Row is coord col is sensor
 
-            imu.calibrate(magCal=False,accCal=False,magAlign=False,gyroCal=False) # CARE this affects 3d graph
+            #imu.calibrate(magCal=False,accCal=False,magAlign=False,gyroCal=False) # CARE this affects 3d graph
 
             newReads[:,3*read_index:3*read_index+3] = imu.extract()
 

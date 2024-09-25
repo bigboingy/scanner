@@ -45,6 +45,9 @@ uint8_t imu_write( i2c_master_dev_handle_t imu_handle, uint8_t currentBank, uint
     // Send command
     ESP_ERROR_CHECK(i2c_master_transmit(imu_handle,writeBuffer,sizeof(writeBuffer),-1));
 
+    // Add a delay so the sensor can work itself out, won't affect normal operation as no writes are made
+    vTaskDelay(50/portTICK_PERIOD_MS);
+
     return newBank;
 }
 
@@ -131,28 +134,22 @@ uint8_t imu_init(i2c_master_dev_handle_t imu_handle, uint8_t currentBank, uint8_
 
     // Turn on chip (clear sleep bit)
     currentBank = imu_write( imu_handle, currentBank, PWR_MGMT_1, 0x01);
-    vTaskDelay(20/portTICK_PERIOD_MS);
 
     // Enable ODR start time alignment
     currentBank = imu_write( imu_handle, currentBank, ODR_ALIGN_EN, 0x01);
-    vTaskDelay(20/portTICK_PERIOD_MS);
 
     // Set acc and gyro scales, maintains lowpass filters
     currentBank = imu_write(imu_handle, currentBank, ACCEL_CONFIG, (accScale << 1) | 0x01 );
-    vTaskDelay(20/portTICK_PERIOD_MS);
     currentBank = imu_write(imu_handle, currentBank, GYRO_CONFIG_1, (gyroScale << 1) | 0x01 );
-    vTaskDelay(20/portTICK_PERIOD_MS);
     ESP_LOGI(TAG,"Initialising IMU with acc scale %i and gyro scale %i",accScale,gyroScale);
 
     // Reset and then enable I2C master
     currentBank = imu_write(imu_handle, currentBank, USER_CTRL, 0x02);
     vTaskDelay(100/portTICK_PERIOD_MS);
     currentBank = imu_write(imu_handle, currentBank, USER_CTRL, 0x20);
-    vTaskDelay(20/portTICK_PERIOD_MS);
 
     // Set I2C master clock frequency to 400 kHz
     currentBank = imu_write(imu_handle, currentBank, I2C_MST_CTRL, 0x07);
-    vTaskDelay(20/portTICK_PERIOD_MS);
 
     // Reset magnetometer and wait... If after offset setting, this resets za!!
     currentBank = mag_write(imu_handle, currentBank, MAG_CNTL3, 0x01);
@@ -177,18 +174,19 @@ uint8_t imu_init(i2c_master_dev_handle_t imu_handle, uint8_t currentBank, uint8_
         gyroSum[1] += (int16_t)(temp[8] << 8 | temp[9]);
         gyroSum[2] += (int16_t)(temp[10] << 8 | temp[11]);
     }
-    // Acc, registers take a 15 bit value. Need to read seperately as regs aren't sequential!
+    // Acc offset registers take a 15 bit value. Need to read seperately as regs aren't sequential!
     currentBank = imu_read(imu_handle,currentBank,XA_OFFS_H,&temp[0],2); // Get current offsets (15bit), put into temp[0:6]
     currentBank = imu_read(imu_handle,currentBank,YA_OFFS_H,&temp[2],2);
     currentBank = imu_read(imu_handle,currentBank,ZA_OFFS_H,&temp[4],2);
-    // Averages must be converted into +/-16 G scale, (setting 3)
-    int16_t accAv[3] = {accSum[0]*(accScaleFacs[3]/accScaleFac)/offsetNo,
-                        accSum[1]*(accScaleFacs[3]/accScaleFac)/offsetNo,
-                        accSum[2]*(accScaleFacs[3]/accScaleFac)/offsetNo}; // Converted averages in 4096 lsb/G
+    // Averages must be converted into +/-32 G scale, which isn't even a setting, equates to 1024 lsb/G or 0.98mg steps
+    uint16_t accOffsScaleFac = 1024;
+    int16_t accAv[3] = {accSum[0]*(accOffsScaleFac/accScaleFac)/offsetNo + 0.5, // Add 0.5 for rounding
+                        accSum[1]*(accOffsScaleFac/accScaleFac)/offsetNo + 0.5,
+                        accSum[2]*(accOffsScaleFac/accScaleFac)/offsetNo + 0.5}; // Converted averages in 1024 lsb/G
     int16_t accOffsets[3] = { // Work out the offsets
         (temp[0] << 7 | temp[1] >> 1) - accAv[0], // Current - error
         (temp[2] << 7 | temp[3] >> 1) - accAv[1], // xxxxxxxx xxxxxxxo --> oxxxxxxx xxxxxxxx
-        (temp[4] << 7 | temp[5] >> 1) - (accAv[2]-(1*accScaleFacs[3])) // Starting error for z is distance from 1
+        (temp[4] << 7 | temp[5] >> 1) - (accAv[2]-(1*accOffsScaleFac)) // Starting error for z is distance from 1
     }; // oxxxxxxx xxxxxxx --> xxxxxxxx xxxxxxo
     currentBank = imu_write(imu_handle,currentBank,XA_OFFS_H,(uint8_t)(accOffsets[0]>>7)); // Acc x high
     currentBank = imu_write(imu_handle,currentBank,XA_OFFS_L,(uint8_t)(accOffsets[0]<<1)); // Acc x low
@@ -196,12 +194,14 @@ uint8_t imu_init(i2c_master_dev_handle_t imu_handle, uint8_t currentBank, uint8_
     currentBank = imu_write(imu_handle,currentBank,YA_OFFS_L,(uint8_t)(accOffsets[1]<<1)); // Acc y low
     currentBank = imu_write(imu_handle,currentBank,ZA_OFFS_H,(uint8_t)(accOffsets[2]>>7)); // Acc z high
     currentBank = imu_write(imu_handle,currentBank,ZA_OFFS_L,(uint8_t)(accOffsets[2]<<1)); // Acc z low
+    ESP_LOGI(TAG,"Adjusted acceleration offsets by x: %"PRId16" y: %"PRId16" z: %"PRId16" (1024 lsb/G)",
+            -accAv[0],-accAv[1],-(accAv[2]-(1*accOffsScaleFac)));
 
     // Gyro
     // Average must be converted into +/-1000 dps scale, (setting 2)
-    int16_t gyroAv[3] = {gyroSum[0]*(gyroScaleFacs[2]/gyroScaleFac)/offsetNo,
-                         gyroSum[1]*(gyroScaleFacs[2]/gyroScaleFac)/offsetNo,
-                         gyroSum[2]*(gyroScaleFacs[2]/gyroScaleFac)/offsetNo}; // Converted averages
+    int16_t gyroAv[3] = {gyroSum[0]*(gyroScaleFacs[2]/gyroScaleFac)/offsetNo + 0.5, // Add 0.5 for rounding
+                         gyroSum[1]*(gyroScaleFacs[2]/gyroScaleFac)/offsetNo + 0.5,
+                         gyroSum[2]*(gyroScaleFacs[2]/gyroScaleFac)/offsetNo + 0.5}; // Converted averages
 
     currentBank = imu_write(imu_handle,currentBank,XG_OFFS_H,(uint8_t)(-gyroAv[0]>>8)); // Gyro x high
     currentBank = imu_write(imu_handle,currentBank,XG_OFFS_L,(uint8_t)(-gyroAv[0]&0xFF)); // Gyro x low
@@ -209,6 +209,8 @@ uint8_t imu_init(i2c_master_dev_handle_t imu_handle, uint8_t currentBank, uint8_
     currentBank = imu_write(imu_handle,currentBank,YG_OFFS_L,(uint8_t)(-gyroAv[1]&0xFF)); // Gyro y low
     currentBank = imu_write(imu_handle,currentBank,ZG_OFFS_H,(uint8_t)(-gyroAv[2]>>8)); // Gyro z high
     currentBank = imu_write(imu_handle,currentBank,ZG_OFFS_L,(uint8_t)(-gyroAv[2]&0xFF)); // Gyro z low
+    ESP_LOGI(TAG,"Set gyroscope offsets in x: %"PRId16" y: %"PRId16" z: %"PRId16" (32.8 LSB/dps)",
+            gyroAv[0],gyroAv[1],gyroAv[2]);
 
     return currentBank;
 
