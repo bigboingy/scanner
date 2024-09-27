@@ -13,9 +13,10 @@ queue_lidar = asyncio.Queue() # Queue for lidars, which correspond with R in que
 # Params:
 # calibrate enables calibration of imu objects
 # debug enables status printing
+# init can be set to False to stop initalisation Rs and lidars being passed to queue
           
 # Blocks on read()
-async def fusion(calibrate=False, debug=False):
+async def fusion(calibrate=False, debug=False, init=True):
 
     # Fusion setup
     ahrs = imufusion.Ahrs()
@@ -29,25 +30,30 @@ async def fusion(calibrate=False, debug=False):
     # Infinite loop
     while 1:
         # Get ble data
-        data_ble = await read()
-
-        for lidar in data_ble['lidar']: # Put lidar objects into queue individually
-            queue_lidar.put_nowait(lidar)
-
+        data_ble = await read()            
         imus = data_ble['imu'] # Extract imus
+        lidars = data_ble['lidar'] # Extract lidars
 
-        # Loop for each imu returned, putting R into the queue
-        for imu in imus:
-            if calibrate: imu.calibrate(magCal=True,accCal=True,magAlign=True,gyroCal=False) # Calibrate imu object, changing its values
-            reading = imu.extract()
-            # Update sensor fusion. Rakes gyro (1 by 3 matrix), acc (1 by 3 matrix), mag (1 by 3 matrix) and dt
+        # Loop for each imu returned, putting R into the queue. Index is used to get corresponding lidar
+        for i,imu in enumerate(imus):
+            # Calibrate imu object, changing its values
+            if calibrate: imu.calibrate(magCal=True,accCal=True,magAlign=True,gyroCal=False)
+            reading = imu.extract() # Extract data
+
+            # Update sensor fusion. Takes gyro (1 by 3 matrix), acc (1 by 3 matrix), mag (1 by 3 matrix) and dt
             ahrs.update(reading[:,1],reading[:,0],reading[:,2],imu.count)
-            # Add rotation matrix to queue
-            queue_R.put_nowait(ahrs.quaternion.to_matrix())
 
-            # Print status flags and internal states
+            # Pass values to queues if init is true or ahrs is finished initialising
+            flags = ahrs.flags
+            if init or not flags.initialising:
+                # Add rotation matrix to queue
+                queue_R.put_nowait(ahrs.quaternion.to_matrix())
+                queue_lidar.put_nowait(lidars[i])
+            else:
+                print("Initialising imu fusion, please wait...")
+
+            # If debug is set to true, print status flags and internal states
             if debug:
-                flags = ahrs.flags
                 if flags.initialising: print('Initialising')
                 if flags.angular_rate_recovery: print('Angular rate recovery')
                 if flags.acceleration_recovery: print('Acceleration recovery')
@@ -58,7 +64,6 @@ async def fusion(calibrate=False, debug=False):
                 if states.magnetometer_ignored:
                     print('Magnetometer ignored, error: %.1f' % states.magnetic_error)
                 print('x')
-        
 
 # Reads fusion output from the queue to run o3d visualisaion of rotation matrices
 # Blocks on waiting for a queue_R matrix
