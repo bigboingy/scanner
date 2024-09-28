@@ -1,3 +1,6 @@
+from dataclasses import dataclass
+import numpy as np
+
 # Packet lengths
 BYTES_LIDAR = 6
 BYTES_IMU   = 22
@@ -36,18 +39,24 @@ def twos16(val: int) -> int:
         return -((~val & 0xFFFF) + 1) # If negative, invert bits and add 1. Mask to make int act like 16 bit
     return val
 
+# Geometric variables
+direc = np.array([[0],[0],[-1]]) # Which way the lidar faces relative to the imu coordinates
+r = 0 # Radius of rotation. The origin lies at the centre of this radius
+
 # Dataclasses
-from dataclasses import dataclass
-import numpy as np
 class Lidar:
     dist: int = 0
     str: int = 0
     temp: int = 0
     def populate(self,bytes_lidar): # Populate using 6 bytes in order
         self.dist = (bytes_lidar[0] | bytes_lidar[1]<<8) / 1000 # Convert to metres
-        self.str = bytes_lidar[2] | bytes_lidar[3]<<8
-        self.temp = (bytes_lidar[4] | bytes_lidar[5]<<8)/8 - 256
 
+        self.str = bytes_lidar[2] | bytes_lidar[3]<<8
+        # If str<100 or str=65535 then detection is unreliable and dist is set to 0
+        if self.str < 100 or self.str == 65535:
+            print(f'Lidar strength = {self.str}, distance has been set to 0')
+
+        self.temp = (bytes_lidar[4] | bytes_lidar[5]<<8)/8 - 256
         # Temp warning
         if self.temp > 57: print(f"Lidar temperature is {self.temp}, max is 60")
 

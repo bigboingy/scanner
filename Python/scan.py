@@ -3,15 +3,13 @@ import numpy as np
 from ble import run
 from fusion import fusion, queue_R, queue_lidar
 import asyncio
-from config import Cartesian
+from config import Cartesian, direc, r
 
 queue_point = asyncio.Queue() # Queue for point cloud coordinates (cartesian objects)
 queue_rotation = asyncio.Queue() # Queue for calculations function to pass rotations for vis function
 
-
 # Reads from R and lidar queues, generating point cloud data
 # Blocks on waiting for an item from both queue_R and queue_lidar
-direc = np.array([[0],[0],[-1]]) # [x y z] column vector
 async def scan():
 
     while 1:
@@ -23,11 +21,17 @@ async def scan():
         queue_lidar.task_done()
         dist = lidar.dist # Extract distance (m)
 
-        queue_rotation.put_nowait(R) # Pass the rotation to the queue for the visualisation
+        # Data check
+        if dist > 0:
 
-        # We are assuming rotation is perfectly about the lidar
-        coord = R @ (dist*direc) # Calculate coordinate
-        queue_point.put_nowait(Cartesian(coord[0,0],coord[1,0],coord[2,0])) # Add point to queue
+            # Pass the rotation to the queue for the visualisation (used for box rotation)
+            queue_rotation.put_nowait(R)
+
+            # Find coord
+            coord = R @ ((dist+r)*direc) # Calculate coordinate
+            queue_point.put_nowait(Cartesian(coord[0,0],coord[1,0],coord[2,0])) # Add point to queue
+
+        else: print("Skipping point...")
 
 # Reads from point queue, visualising point cloud data
 # Blocks on waiting for new data
@@ -46,12 +50,12 @@ async def scanVis():
     # vis.add_geometry(axis)
 
     # Add box
-    BOX_SCALE = 7
+    BOX_SCALE = 3
     BOX_DIMS = (0.09402, 0.0594, 0.03932) # x,y,z lengths
-    LIDAR_CENTRE = (0.03376,-0.003,-BOX_DIMS[2]/2) # Where the distance is measured from (take bw lidar emitter/reciever)
+    LIDAR_CENTRE = (0.03376,-0.003,-BOX_DIMS[2]/2) # Where lidar distance is measured from (take bw lidar emitter/reciever)
     LIDAR_DIMS = (0.0185,0.035) # x,y
     LASER_CENTRE = (0.03376,0.01995)
-    LASER_DIMS = 0.00285
+    LASER_R = 0.00285
     points = [[-BOX_DIMS[0]/2, -BOX_DIMS[1]/2, -BOX_DIMS[2]/2],[BOX_DIMS[0]/2, -BOX_DIMS[1]/2, -BOX_DIMS[2]/2],
               [-BOX_DIMS[0]/2, BOX_DIMS[1]/2, -BOX_DIMS[2]/2],[BOX_DIMS[0]/2, BOX_DIMS[1]/2, -BOX_DIMS[2]/2],
               [-BOX_DIMS[0]/2, -BOX_DIMS[1]/2, BOX_DIMS[2]/2],[BOX_DIMS[0]/2, -BOX_DIMS[1]/2, BOX_DIMS[2]/2],
@@ -62,16 +66,21 @@ async def scanVis():
               [LIDAR_CENTRE[0]-LIDAR_DIMS[0]/2,LIDAR_CENTRE[1]+LIDAR_DIMS[1]/2,-BOX_DIMS[2]/2],
               [LIDAR_CENTRE[0]-LIDAR_DIMS[0]/2,LIDAR_CENTRE[1]-LIDAR_DIMS[1]/2,-BOX_DIMS[2]/2], # Lidar box
 
-              [LASER_CENTRE[0]+LASER_DIMS,LASER_CENTRE[1],-BOX_DIMS[2]/2],
-              [LASER_CENTRE[0]-LASER_DIMS,LASER_CENTRE[1],-BOX_DIMS[2]/2],
-              [LASER_CENTRE[0],LASER_CENTRE[1]+LASER_DIMS,-BOX_DIMS[2]/2],
-              [LASER_CENTRE[0],LASER_CENTRE[1]-LASER_DIMS,-BOX_DIMS[2]/2], # Laser box
+              [LASER_CENTRE[0]+LASER_R,LASER_CENTRE[1],-BOX_DIMS[2]/2],
+              [LASER_CENTRE[0]-LASER_R,LASER_CENTRE[1],-BOX_DIMS[2]/2],
+              [LASER_CENTRE[0],LASER_CENTRE[1]+LASER_R,-BOX_DIMS[2]/2],
+              [LASER_CENTRE[0],LASER_CENTRE[1]-LASER_R,-BOX_DIMS[2]/2], # Laser box
               ]
-    for list in points: # Translate to box centre, and scale by box scale
-        list[0] = list[0] - LIDAR_CENTRE[0]
+    for list in points:
+        list[0] = list[0] - LIDAR_CENTRE[0] # Translate lidar centre to origin
         list[1] = list[1] - LIDAR_CENTRE[1]
         list[2] = list[2] - LIDAR_CENTRE[2]
-        list[:] = [x*BOX_SCALE for x in list]
+        list[:] = [x*BOX_SCALE for x in list] # Scale by box scale
+        list[0] = list[0] + r*direc[0] # Translate box centre by rotation radius, in direction of lidar beam
+        list[1] = list[1] + r*direc[1]
+        list[2] = list[2] + r*direc[2]
+
+        
     lines = [[0, 1],[0, 2],[1, 3],[2, 3],[4, 5],[4, 6],[5, 7],[6, 7],[0, 4],[1, 5],[2, 6],[3, 7], # Box
              [8,9],[8,10],[11,9],[11,10], # Lidar box
              [12,14],[12,15],[13,14],[13,15] # Laser box
