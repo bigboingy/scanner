@@ -33,11 +33,7 @@ for obox in oboxes:
     geometries.append(mesh)
     geometries.append(obox)
 geometries.append(downpcd)
-o3d.visualization.draw_geometries(geometries,
-                                  zoom=0.62,
-                                  front=[0.4361, -0.2632, -0.8605],
-                                  lookat=[2.4947, 1.7728, 1.5541],
-                                  up=[-0.1726, -0.9630, 0.2071])
+o3d.visualization.draw_geometries(geometries)
 
 
 # Alpha shapes surface reconstruction
@@ -58,6 +54,6 @@ with o3d.utility.VerbosityContextManager(
         downpcd, depth=5)
 print(mesh)
 mesh.paint_uniform_color([1, 0, 0])
-o3d.visualization.draw_geometries([mesh])
+o3d.visualization.draw_geometries([mesh], mesh_show_back_face=True)
 
 

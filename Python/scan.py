@@ -3,14 +3,17 @@ import numpy as np
 from ble import run
 from fusion import fusion, queue_R, queue_lidar
 import asyncio
-from config import Cartesian, direc, r
+from config import Cartesian, direc
 
 queue_point = asyncio.Queue() # Queue for point cloud coordinates (cartesian objects)
 queue_rotation = asyncio.Queue() # Queue for calculations function to pass rotations for vis function
 
 # Reads from R and lidar queues, generating point cloud data
 # Blocks on waiting for an item from both queue_R and queue_lidar
-async def scan():
+# Accepts r, rotation radius
+async def scan(r):
+
+    print(f'Scanning with rotation radius r = {r}')
 
     while 1:
         # Wait for R and lidar items
@@ -35,7 +38,10 @@ async def scan():
 
 # Reads from point queue, visualising point cloud data
 # Blocks on waiting for new data
-async def scanVis():
+# Accepts r, rotation radius
+async def scanVis(r):
+
+    print(f'Visualising scan using rotation radius r = {r}')
 
     # Open3d setup
     vis = o3d.visualization.Visualizer()
@@ -133,7 +139,7 @@ async def scanVis():
     # Save point cloud if user wants
     save = input("\nWould you like to save this point cloud? y/n\n")
     if save == "y":
-        pcd.points = o3d.utility.Vector3dVector(np.asarray(pcd.points[2:]))
+        pcd.points = o3d.utility.Vector3dVector(np.asarray(pcd.points[2:])) # Get rid of dummy points
         if o3d.io.write_point_cloud("pointcloud.pcd",pcd):
             print('\nSaved!\n')
         else:
@@ -144,4 +150,8 @@ async def scanVis():
 
 if __name__ == "__main__":
 
-    run(fusion(calibrate=True,debug=False,init=False),scan(),scanVis())
+    from config import r # Stored radius
+
+    radius = 0
+
+    run(fusion(calibrate=True,debug=False,init=False),scan(radius),scanVis(radius))

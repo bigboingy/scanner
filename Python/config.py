@@ -41,7 +41,7 @@ def twos16(val: int) -> int:
 
 # Geometric variables
 direc = np.array([[0],[0],[-1]]) # Which way the lidar faces relative to the imu coordinates
-r = 0 # Radius of rotation. The origin lies at the centre of this radius
+r = np.loadtxt("params_r").item() # Radius of rotation. The origin lies at the centre of this radius
 
 # Dataclasses
 class Lidar:
@@ -138,9 +138,5 @@ class Imu:
 
 
 if __name__ == "__main__":
-    for i in range(0xFFFF+1):
-        print(i)
-        print(bin(i))
-        print(bin(twos16(i)))
-        print(twos16(i))
-        print(type(i))
+    print(type(r))
+    print(r)
