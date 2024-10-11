@@ -22,7 +22,7 @@ def scan_calibrate(pcd):
     R_MIN = 0
     R_MAX = 1
     VALS = 100 # No. values to trial
-    PLANE_SIZE = 1 # In y and z coords
+    PLANE_SIZE = 2 # In y and z coords
 
     # Initialise original pcd points. pcd is changed, so don't reference it
     points = np.empty(np.asarray(pcd.points).shape)
@@ -54,12 +54,19 @@ def scan_calibrate(pcd):
         d = -np.dot(normal, centroid) # Plane passes through centroid
 
         # Create square plane
-        f = lambda y,z: -(b*y+c*z+d)/a # Find x using z and y
+        # f = lambda y,z: -(b*y+c*z+d)/a # Find x using z and y
+        # vertices = np.array([
+        #     [f(-PLANE_SIZE,-PLANE_SIZE),-PLANE_SIZE,-PLANE_SIZE],
+        #     [f(-PLANE_SIZE,PLANE_SIZE),-PLANE_SIZE,PLANE_SIZE],
+        #     [f(PLANE_SIZE,-PLANE_SIZE),PLANE_SIZE,-PLANE_SIZE],
+        #     [f(PLANE_SIZE,PLANE_SIZE),PLANE_SIZE,PLANE_SIZE]
+        # ])
+        f = lambda x,z: -(c*z+a*x+d)/b # Find y using x and z
         vertices = np.array([
-            [f(-PLANE_SIZE,-PLANE_SIZE),-PLANE_SIZE,-PLANE_SIZE],
-            [f(-PLANE_SIZE,PLANE_SIZE),-PLANE_SIZE,PLANE_SIZE],
-            [f(PLANE_SIZE,-PLANE_SIZE),PLANE_SIZE,-PLANE_SIZE],
-            [f(PLANE_SIZE,PLANE_SIZE),PLANE_SIZE,PLANE_SIZE]
+            [-PLANE_SIZE,f(-PLANE_SIZE,-PLANE_SIZE),-PLANE_SIZE,],
+            [-PLANE_SIZE,f(-PLANE_SIZE,-PLANE_SIZE),PLANE_SIZE,],
+            [PLANE_SIZE,f(-PLANE_SIZE,-PLANE_SIZE),-PLANE_SIZE,],
+            [PLANE_SIZE,f(-PLANE_SIZE,-PLANE_SIZE),PLANE_SIZE,]
         ])
         mesh.vertices = o3d.utility.Vector3dVector(vertices)
 
@@ -115,4 +122,4 @@ def scan_calibrate(pcd):
 if __name__ == "__main__":
     
     
-    scan_calibrate(o3d.io.read_point_cloud("pointcloud.pcd"))
+    scan_calibrate(o3d.io.read_point_cloud("pointcloud_armcalibrate.pcd"))

@@ -4,6 +4,7 @@ from ble import run
 from fusion import fusion, queue_R, queue_lidar
 import asyncio
 from config import Cartesian, direc
+import time
 
 queue_point = asyncio.Queue() # Queue for point cloud coordinates (cartesian objects)
 queue_rotation = asyncio.Queue() # Queue for calculations function to pass rotations for vis function
@@ -38,17 +39,20 @@ async def scan(r):
 
 # Reads from point queue, visualising point cloud data
 # Blocks on waiting for new data
-# Accepts r, rotation radius
-async def scanVis(r):
+# Accepts r, rotation radius, and timeout, which automatically stops scanning after timeout has elapsed
+async def scanVis(r,timeout):
+
+    start = time.time()
 
     print(f'Visualising scan using rotation radius r = {r}')
 
     # Open3d setup
     vis = o3d.visualization.Visualizer()
-    vis.create_window(height=480*5, width=640*5)
+    vis.create_window(height=1928, width=3200)
+    
     # Initialise pointcloud
     pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(np.array([[-6,-6,-6],[6,6,6]])) # First two points are dummy points
+    pcd.points = o3d.utility.Vector3dVector(np.array([[-2,-2,-2],[2,2,2]])) # First two points are dummy points
     vis.add_geometry(pcd)
 
     # # Add coord axis
@@ -103,6 +107,11 @@ async def scanVis(r):
     line_laser.colors = o3d.utility.Vector3dVector([[1, 0, 0]])  # RGB for red
     vis.add_geometry(line_laser)
 
+    # Initial view
+    ctr = vis.get_view_control()
+    view = o3d.io.read_pinhole_camera_parameters("cam_init.json")
+    ctr.convert_from_pinhole_camera_parameters(view,True)
+
     # Loop
     POINT_SKIP = 4 # Skip some points to increase responsiveness
     running = True
@@ -134,6 +143,9 @@ async def scanVis(r):
         running = vis.poll_events() # Returns false on window close
         vis.update_renderer()
 
+        # Timeout?
+        if time.time() - start > timeout: break
+
     vis.destroy_window()
 
     # Save point cloud if user wants
@@ -154,4 +166,4 @@ if __name__ == "__main__":
 
     radius = 0
 
-    run(fusion(calibrate=True,debug=False,init=False),scan(radius),scanVis(radius))
+    run(fusion(calibrate=True,debug=False,init=False),scan(radius),scanVis(radius,5*60))

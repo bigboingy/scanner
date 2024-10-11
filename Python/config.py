@@ -55,6 +55,7 @@ class Lidar:
         # If str<100 or str=65535 then detection is unreliable and dist is set to 0
         if self.str < 100 or self.str == 65535:
             print(f'Lidar strength = {self.str}, distance has been set to 0')
+            assert self.dist == 0
 
         self.temp = (bytes_lidar[4] | bytes_lidar[5]<<8)/8 - 256
         # Temp warning
@@ -138,5 +139,4 @@ class Imu:
 
 
 if __name__ == "__main__":
-    print(type(r))
-    print(r)
+    ...
